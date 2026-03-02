@@ -845,15 +845,55 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
           <button key={k} onClick={() => setTabP(k)} className={`pb-2 px-1 text-sm font-semibold border-b-2 transition ${tabP === k ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500"}`}>{l}</button>
         ))}
       </div>
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {tabP === "ordinarios" ? (
-          <select value={fOrd.periodo} onChange={e => setFOrd({ ...fOrd, periodo: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-            {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
+          <>
+            <select value={fOrd.periodo} onChange={e => setFOrd({ ...fOrd, periodo: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+              {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+
+            {/* Accesos rápidos: últimos 3 períodos */}
+            <div className="flex items-center gap-2">
+              {periodos.slice(-3).reverse().map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setFOrd({ ...fOrd, periodo: p.id })}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                    Number(fOrd.periodo) === p.id
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title={`Ir a ${p.nombre}`}
+                >
+                  {p.nombre}
+                </button>
+              ))}
+            </div>
+          </>
         ) : (
-          <select value={fDer.derrama} onChange={e => setFDer({ ...fDer, derrama: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-            {derramas.map(d => <option key={d.id} value={d.id}>{d.titulo}</option>)}
-          </select>
+          <>
+            <select value={fDer.derrama} onChange={e => setFDer({ ...fDer, derrama: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+              {derramas.map(d => <option key={d.id} value={d.id}>{d.titulo}</option>)}
+            </select>
+
+            {/* Accesos rápidos: últimas 3 derramas */}
+            <div className="flex items-center gap-2">
+              {derramas.slice(-3).reverse().map(d => (
+                <button
+                  key={d.id}
+                  onClick={() => setFDer({ ...fDer, derrama: d.id })}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+                    Number(fDer.derrama) === d.id
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title={`Ir a ${d.titulo}`}
+                >
+                  {d.titulo}
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
       <FilterBar filters={tabP === "ordinarios" ? fOrd : fDer} setFilters={tabP === "ordinarios" ? setFOrd : setFDer} config={tabP === "ordinarios" ? ordFilterConfig : derFilterConfig} onClear={tabP === "ordinarios" ? clearOrd : clearDer} />
