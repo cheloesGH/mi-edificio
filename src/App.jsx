@@ -205,6 +205,7 @@ function Login({ usuarios, onLogin }) {
 function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
+  const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
 
   const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.length - 1];
   const cuotas = pagos.filter(p => p.periodoId === per?.id && p.tipo === "ordinario");
@@ -250,8 +251,55 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
   return (
     <div className="space-y-5">
 
+      {/* ── Modal detalle moroso (desglose por período) ── */}
+      {morDetalle && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <button onClick={() => setMorDetalle(null)} className="text-xs text-indigo-500 hover:underline mb-1 block">← Volver al listado</button>
+                  <h3 className="font-bold text-lg text-slate-800">Depto {morDetalle.depto}</h3>
+                  <p className="text-xs text-slate-400">{morDetalle.propietario} · Desglose de deuda pendiente</p>
+                </div>
+                <button onClick={() => { setMorDetalle(null); setModal(null); }} className="text-slate-300 hover:text-slate-500 text-xl leading-none">✕</button>
+              </div>
+            </div>
+            <div className="p-6 space-y-2">
+              {pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado").length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">Sin deudas pendientes.</p>
+              )}
+              {pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado")
+                .sort((a, b) => b.anio - a.anio || b.mes - a.mes)
+                .map((p, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-rose-50">
+                  <div>
+                    <p className="text-sm font-bold text-slate-700">{p.periodoNombre}</p>
+                    <div className="flex gap-2 mt-0.5">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${p.tipo === "ordinario" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>{p.tipo === "ordinario" ? "Ordinaria" : "Derrama"}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${p.estado === "parcial" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>{p.estado}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-rose-600">{fmt(p.montoTotal - p.montoPagado)}</p>
+                    <p className="text-xs text-slate-400">de {fmt(p.montoTotal)}</p>
+                    {p.montoPagado > 0 && <p className="text-xs text-emerald-600">pagado: {fmt(p.montoPagado)}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 pb-6 border-t border-slate-100 pt-4 flex items-center justify-between">
+              <span className="text-sm text-slate-500 font-medium">Total adeudado</span>
+              <span className="text-base font-bold text-rose-600">
+                {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal detalle ── */}
-      {modal && modalData[modal] && (
+      {modal && modalData[modal] && !morDetalle && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-100">
@@ -266,12 +314,17 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
             <div className="p-6 space-y-2">
               {modalData[modal].rows.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Sin registros.</p>}
               {modalData[modal].rows.slice(0, 20).map((r, i) => (
-                <div key={i} className={`flex items-center justify-between p-3 rounded-xl ${modalData[modal].rowColor}`}>
+                <div key={i}
+                  onClick={() => modal === "morosos" ? setMorDetalle(r) : null}
+                  className={`flex items-center justify-between p-3 rounded-xl ${modalData[modal].rowColor} ${modal === "morosos" ? "cursor-pointer hover:bg-rose-200 transition" : ""}`}>
                   <div>
                     <p className="text-sm font-bold text-slate-700">{r.depto}</p>
                     <p className="text-xs text-slate-400">{r.propietario || r.periodoNombre || r.tipo}</p>
                   </div>
-                  <span className={`text-sm font-bold ${modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
+                  <div className="text-right">
+                    <span className={`text-sm font-bold ${modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
+                    {modal === "morosos" && <p className="text-xs text-indigo-500">Ver desglose →</p>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -414,13 +467,43 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
 }
 
 // ─── PERIODOS ────────────────────────────────────────────────────────────────
-function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos }) {
+function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ mes: today.m, anio: today.y, presupuesto: "3800", metodoPeriodo: "coeficiente" });
+  const [confirmCierre, setConfirmCierre] = useState(null);
+  const [form, setForm] = useState({ mes: today.m, anio: today.y, presupuesto: "", metodoPeriodo: "coeficiente" });
   const totalM2 = deptos.reduce((a, d) => a + d.m2, 0);
+
+  // Presupuesto sugerido = suma de egresos del período anterior
+  const presupuestoSugerido = useMemo(() => {
+    if (!periodos.length || !egresos.length) return "0";
+    const perAnterior = periodos[periodos.length - 1];
+    const egresosMes = egresos.filter(e => e.mes === perAnterior.mes && e.anio === perAnterior.anio);
+    const total = egresosMes.reduce((a, e) => a + e.monto, 0);
+    return total > 0 ? total.toFixed(2) : egresos.reduce((a, e) => a + e.monto, 0) > 0
+      ? (egresos.reduce((a, e) => a + e.monto, 0) / [...new Set(egresos.map(e => `${e.mes}-${e.anio}`))].length).toFixed(2)
+      : "0";
+  }, [periodos, egresos]);
+
+  const toggleEstado = async (p) => {
+    if (p.estado === "abierto") {
+      setConfirmCierre(p);
+    } else {
+      const { error } = await supabase.from('periodos').update({ estado: "abierto" }).eq('id', p.id);
+      if (error) { alert("Error: " + error.message); return; }
+      setPeriodos(periodos.map(x => x.id === p.id ? { ...x, estado: "abierto" } : x));
+    }
+  };
+
+  const cerrarPeriodo = async () => {
+    const { error } = await supabase.from('periodos').update({ estado: "cerrado" }).eq('id', confirmCierre.id);
+    if (error) { alert("Error: " + error.message); return; }
+    setPeriodos(periodos.map(x => x.id === confirmCierre.id ? { ...x, estado: "cerrado" } : x));
+    setConfirmCierre(null);
+  };
+
   const crear = async () => {
     if (periodos.find(p => p.mes === Number(form.mes) && p.anio === Number(form.anio))) return alert("Período ya existe");
-    const np = { mes: Number(form.mes), anio: Number(form.anio), nombre: `${MESES[form.mes]} ${form.anio}`, presupuesto: Number(form.presupuesto), estado: "abierto", metodo_periodo: form.metodoPeriodo };
+    const np = { mes: Number(form.mes), anio: Number(form.anio), nombre: `${MESES[form.mes]} ${form.anio}`, presupuesto: Number(form.presupuesto || presupuestoSugerido), estado: "abierto", metodo_periodo: form.metodoPeriodo };
     const { data, error } = await supabase.from('periodos').insert(np).select().single();
     if (error) { alert("Error al guardar período: " + error.message); return; }
     const perAdap = { ...data, metodoPeriodo: data.metodo_periodo };
@@ -438,8 +521,25 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Períodos de Cobro</h2>
-        <button onClick={() => setShowNew(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">+ Nuevo Período</button>
+        <button onClick={() => { setForm(f => ({ ...f, presupuesto: presupuestoSugerido })); setShowNew(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">+ Nuevo Período</button>
       </div>
+      {/* Modal confirmación cierre */}
+      {confirmCierre && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <div className="text-center">
+              <div className="text-4xl mb-3">🔒</div>
+              <h3 className="font-bold text-lg text-slate-800">Cerrar Período</h3>
+              <p className="text-sm text-slate-500 mt-2">¿Estás seguro de cerrar el período <strong>{confirmCierre.nombre}</strong>? No se podrán registrar más pagos ordinarios en él.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmCierre(null)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={cerrarPeriodo} className="flex-1 bg-rose-600 text-white py-2 rounded-xl text-sm font-semibold">Sí, cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
@@ -458,8 +558,13 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos }) {
                 <input type="number" value={form.anio} onChange={e => setForm({ ...form, anio: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
               </div>
             </div>
-            <div><label className="text-xs text-slate-500 mb-1 block">Presupuesto Total ($)</label>
-              <input type="number" value={form.presupuesto} onChange={e => setForm({ ...form, presupuesto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs text-slate-500">Presupuesto Total ($)</label>
+                <button type="button" onClick={() => setForm({ ...form, presupuesto: presupuestoSugerido })} className="text-xs text-indigo-500 hover:underline">↺ Usar sugerido ({fmt(Number(presupuestoSugerido))})</button>
+              </div>
+              <input type="number" value={form.presupuesto} onChange={e => setForm({ ...form, presupuesto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" placeholder={`Sugerido: ${fmt(Number(presupuestoSugerido))}`} />
+              <p className="text-xs text-slate-400 mt-1">Basado en egresos del período anterior</p>
             </div>
             <div><label className="text-xs text-slate-500 mb-1 block">Método</label>
               <select value={form.metodoPeriodo} onChange={e => setForm({ ...form, metodoPeriodo: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
@@ -493,7 +598,11 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos }) {
                   <h3 className="font-bold text-slate-800 text-lg">{p.nombre}</h3>
                   <p className="text-xs text-slate-500">Presupuesto: {fmt(p.presupuesto)} · {p.metodoPeriodo === "coeficiente" ? "Por coeficiente m²" : "Monto fijo"}</p>
                 </div>
-                <span className={`self-start px-3 py-1 rounded-full text-xs font-semibold ${p.estado === "abierto" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{p.estado === "abierto" ? "🟢 Abierto" : "🔒 Cerrado"}</span>
+                <button
+                  onClick={() => toggleEstado(p)}
+                  className={`self-start px-3 py-1 rounded-full text-xs font-semibold transition hover:opacity-80 ${p.estado === "abierto" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+                  {p.estado === "abierto" ? "🟢 Abierto — clic para cerrar" : "🔒 Cerrado — clic para abrir"}
+                </button>
               </div>
               <div className="flex gap-4 text-sm flex-wrap mb-2">
                 <span className="text-emerald-600 font-semibold">Cobrado: {fmt(cobrado)}</span>
@@ -534,7 +643,9 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const derBase = derActual ? deptos.map(d => {
     const monto = derActual.distribucion === "coeficiente" ? parseFloat((d.coef / 100 * derActual.montoTotal).toFixed(2)) : parseFloat((derActual.montoTotal / 30).toFixed(2));
     const ex = pagos.find(p => p.tipo === "derrama" && p.deptoId === d.id && p.periodoNombre === derActual.titulo);
-    return ex || { id: `v-${d.id}-${derActual.id}`, tipo: "derrama", deptoId: d.id, depto: d.depto, periodoNombre: derActual.titulo, periodoId: periodos[periodos.length - 1]?.id, mes: derActual.mes, anio: derActual.anio, montoTotal: monto, abonos: [], montoPagado: 0, estado: "pendiente", concepto: derActual.titulo };
+    // Si existe en BD, aseguramos que montoTotal sea el calculado (por si no vino de Supabase)
+    if (ex) return { ...ex, montoTotal: ex.montoTotal || monto };
+    return { id: `v-${d.id}-${derActual.id}`, tipo: "derrama", deptoId: d.id, depto: d.depto, periodoNombre: derActual.titulo, periodoId: periodos[periodos.length - 1]?.id, mes: derActual.mes, anio: derActual.anio, montoTotal: monto, abonos: [], montoPagado: 0, estado: "pendiente", concepto: derActual.titulo };
   }) : [];
   const derFiltradas = useMemo(() => derBase.filter(p => {
     const nombre = getNombre(p.deptoId).toLowerCase();
@@ -643,6 +754,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
               <th className="px-3 py-3 text-left hidden lg:table-cell">Piso</th>
               <th className="px-3 py-3 text-right hidden md:table-cell">Total</th>
               <th className="px-3 py-3 text-right hidden md:table-cell">Pagado</th>
+              <th className="px-3 py-3 text-right hidden md:table-cell text-amber-600">Saldo</th>
               <th className="px-3 py-3 text-center">Estado</th>
               <th className="px-3 py-3 text-center">🧾</th>
             </tr>
@@ -657,6 +769,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                   <td className="px-3 py-2.5 hidden lg:table-cell text-slate-400 text-xs">Piso {p.depto?.[0]}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell font-semibold">{fmt(p.montoTotal)}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">{fmt(p.montoPagado)}</td>
+                  <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
                   <td className="px-3 py-2.5 text-center">{estadoBadge(p)}</td>
                   <td className="px-3 py-2.5 text-center">{lastAbono ? <button onClick={() => setComprobante({ cuota: p, abono: lastAbono })} className="text-indigo-400 hover:text-indigo-600 text-lg">🧾</button> : <span className="text-slate-200">🧾</span>}</td>
                 </tr>
@@ -953,7 +1066,7 @@ function Egresos({ egresos, setEgresos, rol }) {
 }
 
 // ─── USUARIOS ────────────────────────────────────────────────────────────────
-function Usuarios({ usuarios, setUsuarios, deptos, rol }) {
+function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuario }) {
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true });
@@ -961,7 +1074,22 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol }) {
   const ROL_LABELS = { admin: "Administrador", tesorero: "Tesorero", prop: "Propietario" };
   const ROL_COLORS = { admin: "bg-indigo-100 text-indigo-700", tesorero: "bg-amber-100 text-amber-700", prop: "bg-slate-100 text-slate-600" };
   const abrir = (u = null) => { if (u) { setForm({ ...u }); setEditId(u.id); } else { setForm({ nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true }); setEditId(null); } setShowNew(true); };
-  const guardar = () => { if (!form.nombre || !form.user || !form.pass) return; if (editId) setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...form } : u)); else setUsuarios([...usuarios, { ...form, id: usuarios.length + 1 }]); setShowNew(false); };
+  const guardar = async () => {
+    if (!form.nombre || !form.user || !form.pass) return alert("Nombre, usuario y contraseña son obligatorios");
+    const payload = { nombre: form.nombre, email: form.email, rol: form.rol, usuario: form.user, pass: form.pass, deptos: form.deptos, activo: form.activo };
+    if (editId) {
+      const { error } = await supabase.from('usuarios').update(payload).eq('id', editId);
+      if (error) { alert("Error al actualizar: " + error.message); return; }
+      const updated = { ...usuarioActivo, ...form, user: form.user };
+      setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...form } : u));
+      if (editId === usuarioActivo?.id) setUsuario(updated);
+    } else {
+      const { data, error } = await supabase.from('usuarios').insert(payload).select().single();
+      if (error) { alert("Error al crear usuario: " + error.message); return; }
+      setUsuarios([...usuarios, { ...data, user: data.usuario, deptos: data.deptos || [] }]);
+    }
+    setShowNew(false);
+  };
   const toggleDepto = id => setForm({ ...form, deptos: form.deptos.includes(id) ? form.deptos.filter(x => x !== id) : [...form.deptos, id] });
   const simEmail = u => { setEmailSim(u); setTimeout(() => setEmailSim(null), 3000); };
   return (
@@ -1235,12 +1363,12 @@ export default function App() {
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
           {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} />}
-          {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} />}
+          {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={usuario.rol} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={usuario.rol} />}
           {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={usuario.rol} />}
           {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={usuario.rol} />}
-          {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} />}
+          {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
         </main>
 
