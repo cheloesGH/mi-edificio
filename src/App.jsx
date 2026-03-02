@@ -20,6 +20,24 @@ const toNum = (v, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+
+const userFriendlyError = (errOrMsg, fallback = "Ocurrió un error. Inténtalo nuevamente.") => {
+  const raw = typeof errOrMsg === "string" ? errOrMsg : (errOrMsg?.message ?? String(errOrMsg ?? ""));
+  const msg = String(raw);
+
+  // Conexión / fetch
+  if (/failed to fetch|networkerror|fetch\b|TypeError/i.test(msg)) {
+    return "Sin conexión a Internet o el servicio no responde. Verifica tu red e inténtalo de nuevo.";
+  }
+
+  // Permisos / auth (por si aparece luego con RLS/Auth)
+  if (/jwt|not authorized|unauthorized|forbidden|permission|row level|rls|403|401/i.test(msg)) {
+    return "No tienes permisos para realizar esta acción.";
+  }
+
+  return fallback;
+};
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function exportCSV(rows, cols, filename) {
   const head = cols.map(c => c.label).join(",");
@@ -467,10 +485,28 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
           <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
           <p className="text-xs text-slate-400">Resumen general del edificio</p>
         </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
         <select value={periodoId} onChange={e => setPeriodoId(Number(e.target.value))}
           className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white shadow-sm">
           {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
+
+        {/* Acceso rápido: últimos 3 períodos */}
+        {periodos.slice(-3).map(p => (
+          <button
+            key={p.id}
+            onClick={() => setPeriodoId(p.id)}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold border transition ${
+              Number(periodoId) === p.id
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+            title={`Seleccionar ${p.nombre}`}
+          >
+            {p.nombre}
+          </button>
+        ))}
+      </div>
       </div>
 
       {/* ── Tarjetas métricas ── */}
@@ -746,6 +782,12 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const [modal, setModal] = useState(null);
   const [comprobante, setComprobante] = useState(null);
   const [revertir, setRevertir] = useState(null);
+  const isOffline = () => (typeof navigator !== "undefined" ? !navigator.onLine : false);
+  const payError = (msg, err) => {
+    console.error(msg, err || "");
+    alert(userFriendlyError(err || msg, "No se pudo guardar el pago. Inténtalo nuevamente."));
+  };
+
   const [fOrd, setFOrd] = useState({ periodo: periodos[periodos.length - 1]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
   const [fDer, setFDer] = useState({ derrama: derramas[0]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
   const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
@@ -779,13 +821,15 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   }), [pagos, fDer, derramas]);
 
   const registrarAbono = async (cuotaId, { monto, metodo, imagen }, isDerrama = false, cuotaVirtual = null) => {
+    if (isOffline()) { payError('Sin conexión a internet: no se pudo guardar el pago.'); return; }
     if (isDerrama) {
       const ex = pagos.find(p => p.tipo === "derrama" && p.deptoId === cuotaVirtual.deptoId && p.periodoNombre === cuotaVirtual.periodoNombre);
       if (ex) {
         const abonos = [...(ex.abonos || []), { id: (ex.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
         const montoPagado = parseFloat((ex.montoPagado + monto).toFixed(2));
         const estado = montoPagado >= ex.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-        await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', ex.id);
+        const { error: updError } = await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', ex.id);
+        if (updError) { payError("Error al guardar pago", updError); return; }
         const upd = { ...ex, abonos, montoPagado, estado };
         setPagos(pagos.map(p => p.id === ex.id ? upd : p));
         setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
@@ -794,7 +838,8 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const montoPagado = monto;
         const estado = montoPagado >= cuotaVirtual.montoTotal ? "pagado" : "parcial";
         const nuevo = { tipo: "derrama", depto_id: cuotaVirtual.deptoId, depto: cuotaVirtual.depto, periodo_id: cuotaVirtual.periodoId, periodo_nombre: cuotaVirtual.periodoNombre, mes: cuotaVirtual.mes, anio: cuotaVirtual.anio, monto_total: cuotaVirtual.montoTotal, monto_pagado: montoPagado, estado, abonos, concepto: cuotaVirtual.concepto };
-        const { data } = await supabase.from('pagos').insert(nuevo).select().single();
+        const { data, error: insError } = await supabase.from('pagos').insert(nuevo).select().single();
+        if (insError) { payError("Error al guardar pago", insError); return; }
         const nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: toNum(data.monto_total, 0), montoPagado: toNum(data.monto_pagado, 0), abonos: data.abonos || [] };
         setPagos(p => [...p, nw]);
         setTimeout(() => setComprobante({ cuota: nw, abono: abonos[0] }), 100);
@@ -804,7 +849,8 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
       const abonos = [...(pago.abonos || []), { id: (pago.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
       const montoPagado = parseFloat((pago.montoPagado + monto).toFixed(2));
       const estado = montoPagado >= pago.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-      await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', cuotaId);
+      const { error: updError2 } = await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', cuotaId);
+      if (updError2) { payError("Error al guardar pago", updError2); return; }
       const upd = { ...pago, abonos, montoPagado, estado };
       setPagos(pagos.map(p => p.id === cuotaId ? upd : p));
       setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
@@ -950,6 +996,65 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
   const [edit, setEdit] = useState(false);
   const [ed, setEd] = useState({});
   const [filters, setFilters] = useState({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" });
+  const [showNewProp, setShowNewProp] = useState(false);
+  const [creatingProp, setCreatingProp] = useState(false);
+  const [newProp, setNewProp] = useState({ depto: "", piso: "", m2: "", tipo: "departamento", alicuotaFija: "", metodoCalculo: "coeficiente" });
+
+  const recomputeCoefs = async (allDeptos) => {
+    const totalM2 = allDeptos.reduce((a, d) => a + toNum(d.m2, 0), 0) || 1;
+    const recalced = allDeptos.map(d => ({ ...d, coef: parseFloat(((toNum(d.m2, 0) / totalM2) * 100).toFixed(4)) }));
+    // Best-effort: actualizar coeficientes en BD (para que las cuotas futuras calculen bien)
+    for (const d of recalced) {
+      const { error } = await supabase.from("deptos").update({ coef: d.coef }).eq("id", d.id);
+      if (error) console.error("No se pudo actualizar coef:", error);
+    }
+    return recalced;
+  };
+
+  const crearPropiedad = async () => {
+    if (creatingProp) return;
+    if (!newProp.depto || !newProp.m2) { alert("Completa al menos Propiedad y m²."); return; }
+    setCreatingProp(true);
+    try {
+      const payload = {
+        depto: String(newProp.depto).trim(),
+        piso: Number(newProp.piso || 0),
+        m2: Number(newProp.m2),
+        coef: 0,
+        tipo: newProp.tipo || "departamento",
+        alicuota_fija: Number(newProp.alicuotaFija || 0),
+        metodo_calculo: newProp.metodoCalculo || "coeficiente",
+      };
+
+      const { data, error } = await supabase.from("deptos").insert(payload).select().single();
+      if (error) {
+        console.error(error);
+        alert("No se pudo crear la propiedad: " + userFriendlyError(error));
+        return;
+      }
+
+      // Normalizar nuevo registro al formato que usa la app (camelCase)
+      const nuevo = {
+        ...data,
+        alicuotaFija: toNum(data.alicuota_fija, payload.alicuota_fija),
+        metodoCalculo: data.metodo_calculo || payload.metodo_calculo,
+        tipo: data.tipo || payload.tipo,
+        piso: toNum(data.piso, payload.piso),
+        m2: toNum(data.m2, payload.m2),
+      };
+
+      const recalced = await recomputeCoefs([...deptos, nuevo]);
+      setDeptos(recalced);
+      setShowNewProp(false);
+      setNewProp({ depto: "", piso: "", m2: "", tipo: "departamento", alicuotaFija: "", metodoCalculo: "coeficiente" });
+    } catch (e) {
+      console.error(e);
+      alert(userFriendlyError(e));
+    } finally {
+      setCreatingProp(false);
+    }
+  };
+
   const perActual = periodos[periodos.length - 1];
   const getEst = d => { const c = pagos.find(p => p.deptoId === d.id && p.periodoId === perActual?.id && p.tipo === "ordinario"); return c?.estado === "pagado" ? "pagado" : c?.estado === "parcial" ? "parcial" : "pendiente"; };
   const getOwner = id => usuarios.find(u => u.rol === "prop" && u.deptos?.includes(id));
@@ -1065,9 +1170,80 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
   );
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>
+        {rol === "admin" && (
+          <button
+            onClick={() => setShowNewProp(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700"
+          >
+            + Nueva Propiedad
+          </button>
+        )}
+      </div>
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" })} />
       <ResultCount total={deptos.length} filtered={filtradas.length} onExport={() => exportCSV(filtradas.map(d => ({ ...d, propietario: getOwner(d.id)?.nombre || "-", estado: estLabel(getEst(d)) })), [{ key: "depto", label: "Propiedad" }, { key: "piso", label: "Piso" }, { key: "m2", label: "m²" }, { key: "coef", label: "Coef%" }, { key: "propietario", label: "Propietario" }, { key: "estado", label: "Estado" }], "propiedades.csv")} />
+      {showNewProp && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg">Nueva Propiedad</h3>
+              <button onClick={() => setShowNewProp(false)} className="text-slate-300 hover:text-slate-600 text-xl leading-none">✕</button>
+            </div>
+
+            <div><label className="text-xs text-slate-500 mb-1 block">Propiedad (código)</label>
+              <input value={newProp.depto} onChange={e => setNewProp({ ...newProp, depto: e.target.value })}
+                className="w-full border rounded-xl px-3 py-2 text-sm" placeholder="Ej: 2A, 3B..." />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-500 mb-1 block">Piso</label>
+                <input type="number" value={newProp.piso} onChange={e => setNewProp({ ...newProp, piso: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+              <div><label className="text-xs text-slate-500 mb-1 block">m²</label>
+                <input type="number" value={newProp.m2} onChange={e => setNewProp({ ...newProp, m2: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div><label className="text-xs text-slate-500 mb-1 block">Tipo</label>
+              <select value={newProp.tipo} onChange={e => setNewProp({ ...newProp, tipo: e.target.value })}
+                className="w-full border rounded-xl px-3 py-2 text-sm">
+                <option value="departamento">🏢 Departamento</option>
+                <option value="casa">🏠 Casa</option>
+                <option value="local">🏪 Local</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-500 mb-1 block">Alícuota fija ($)</label>
+                <input type="number" value={newProp.alicuotaFija} onChange={e => setNewProp({ ...newProp, alicuotaFija: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+              <div><label className="text-xs text-slate-500 mb-1 block">Método cálculo</label>
+                <select value={newProp.metodoCalculo} onChange={e => setNewProp({ ...newProp, metodoCalculo: e.target.value })}
+                  className="w-full border rounded-xl px-3 py-2 text-sm">
+                  <option value="coeficiente">Por coeficiente</option>
+                  <option value="fijo">Monto fijo</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowNewProp(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+              <button disabled={creatingProp} onClick={crearPropiedad}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold ${creatingProp ? "bg-indigo-300 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}>
+                {creatingProp ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Nota: al crear una propiedad, la app recalcula los coeficientes (m²/total) para mantener consistencia.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
         {filtradas.map(d => {
           const est = getEst(d); const owner = getOwner(d.id);
@@ -1180,8 +1356,15 @@ function Egresos({ egresos, setEgresos, rol }) {
     const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
     const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha };
-    const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
-    if (error) { alert("Error al guardar egreso: " + error.message); return; }
+    let data, error;
+    try {
+      ({ data, error } = await supabase.from('egresos').insert(nuevo).select().single());
+    } catch (e) {
+      console.error("Error al guardar egreso", e);
+      alert(userFriendlyError(e, "No se pudo guardar el egreso. Inténtalo nuevamente."));
+      return;
+    }
+    if (error) { console.error("Error al guardar egreso", error); alert(userFriendlyError(error, "No se pudo guardar el egreso. Inténtalo nuevamente.")); return; }
     setEgresos([...egresos, data]);
     setShowNew(false);
     setForm({ concepto: "", cat: "Mantenimiento", monto: "" });
@@ -1250,7 +1433,13 @@ function Egresos({ egresos, setEgresos, rol }) {
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
                 {rol === "admin" && <td className="px-4 py-3 text-center"><button onClick={async () => {
-                  await supabase.from('egresos').delete().eq('id', e.id);
+                  const ok = window.confirm("¿Estás seguro de borrar este egreso? Esta acción no se puede deshacer.");
+                  if (!ok) return;
+                  const { error } = await supabase.from('egresos').delete().eq('id', e.id);
+                  if (error) {
+                    alert("Error al borrar egreso: " + error.message);
+                    return;
+                  }
                   setEgresos(egresos.filter(x => x.id !== e.id));
                 }} className="text-slate-300 hover:text-rose-500 text-lg">🗑</button></td>}
               </tr>
@@ -1438,53 +1627,31 @@ export default function App() {
   const [derramas, setDerramas] = useState([]);
   const [egresos, setEgresos] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => { cargarDatos(); }, []);
 
   const cargarDatos = async () => {
     setCargando(true);
-    setLoadError(null);
-    try {
-      const [rDeptos, rUsuarios, rPeriodos, rPagos, rDerramas, rEgresos] = await Promise.all([
-        supabase.from('deptos').select('*').order('id'),
-        supabase.from('usuarios').select('*').order('id'),
-        supabase.from('periodos').select('*').order('id'),
-        supabase.from('pagos').select('*').order('id'),
-        supabase.from('derramas').select('*').order('id'),
-        supabase.from('egresos').select('*').order('id')
-      ]);
-
-      const errors = [rDeptos.error, rUsuarios.error, rPeriodos.error, rPagos.error, rDerramas.error, rEgresos.error].filter(Boolean);
-      if (errors.length) {
-        throw new Error(errors.map(e => e.message || String(e)).join(" | "));
-      }
-
-      const dataDeptos = rDeptos.data;
-      const dataUsuarios = rUsuarios.data;
-      const dataPeriodos = rPeriodos.data;
-      const dataPagos = rPagos.data;
-      const dataDerramas = rDerramas.data;
-      const dataEgresos = rEgresos.data;
-
-      const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
-      const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
-      const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
-      const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: toNum(d.monto_total, 0) }));
-      const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
-
-      setDeptos(deptosAdap);
-      setUsuarios(usuariosAdap);
-      setPeriodos(periodosAdap);
-      setPagos(pagosAdap);
-      setDerramas(derramasAdap);
-      setEgresos(dataEgresos || []);
-    } catch (e) {
-      console.error("Error cargando datos:", e);
-      setLoadError(e?.message || "Error cargando datos. Revisa tu conexión o Supabase.");
-    } finally {
-      setCargando(false);
-    }
+    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }] = await Promise.all([
+      supabase.from('deptos').select('*').order('id'),
+      supabase.from('usuarios').select('*').order('id'),
+      supabase.from('periodos').select('*').order('id'),
+      supabase.from('pagos').select('*').order('id'),
+      supabase.from('derramas').select('*').order('id'),
+      supabase.from('egresos').select('*').order('id')
+    ]);
+    const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
+    const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
+    const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
+    const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: toNum(d.monto_total, 0) }));
+    const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
+    setDeptos(deptosAdap);
+    setUsuarios(usuariosAdap);
+    setPeriodos(periodosAdap);
+    setPagos(pagosAdap);
+    setDerramas(derramasAdap);
+    setEgresos(dataEgresos || []);
+    setCargando(false);
   };
 
   const login = u => { setUsuario(u); setTab(PERMS[u.rol][0]); };
@@ -1508,32 +1675,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-
-      {loadError && (
-        <div className="fixed top-4 left-4 right-4 z-50">
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start justify-between gap-3 shadow-lg">
-            <div>
-              <div className="font-semibold text-red-800">⚠️ Error cargando datos</div>
-              <div className="text-sm text-red-700 mt-1 break-words">{loadError}</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={cargarDatos}
-                className="px-3 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
-              >
-                Reintentar
-              </button>
-              <button
-                onClick={() => setLoadError(null)}
-                className="px-3 py-2 rounded-xl bg-white border border-red-200 text-red-700 text-sm font-semibold hover:bg-red-50"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
 
       {/* ── SIDEBAR OSCURO (desktop) ── */}
       <aside className="hidden lg:flex flex-col w-60 bg-gray-900 text-white min-h-screen flex-shrink-0">
