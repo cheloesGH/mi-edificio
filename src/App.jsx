@@ -82,28 +82,124 @@ function Confirm({ msg, onYes, onNo }) {
 
 // ─── COMPROBANTE ──────────────────────────────────────────────────────────────
 function Comprobante({ cuota, abono, depto, onClose }) {
+  const nro = `#${String(abono?.id || 1).padStart(6, "0")}`;
+  const saldo = Math.max(0, cuota.montoTotal - cuota.montoPagado);
+  const filas = [
+    ["N° Comprobante", nro],
+    ["Tipo", cuota.tipo === "ordinario" ? "Alícuota Ordinaria" : "Derrama Extraordinaria"],
+    ["Propiedad", cuota.depto],
+    ["Propietario", depto?.nombre || "-"],
+    ["Período", cuota.periodoNombre],
+    cuota.concepto && ["Concepto", cuota.concepto],
+    ["Fecha", abono?.fecha || "-"],
+    ["Método de pago", abono?.metodo || "-"],
+  ].filter(Boolean);
+
+  const htmlComprobante = () => `
+    <html><head><title>Comprobante ${nro}</title>
+    <style>
+      body{font-family:sans-serif;padding:32px;color:#1e293b;max-width:480px;margin:auto}
+      h2{text-align:center;color:#4f46e5;margin-bottom:4px}
+      .sub{text-align:center;color:#94a3b8;font-size:13px;margin-bottom:20px}
+      .box{border:2px dashed #a5b4fc;border-radius:12px;padding:16px;background:#eef2ff}
+      .fila{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px solid #e0e7ff}
+      .fila span:first-child{color:#64748b}
+      .fila span:last-child{font-weight:600}
+      .total{display:flex;justify-content:space-between;padding-top:10px;font-size:15px;font-weight:bold}
+      .total span:last-child{color:#059669}
+      .saldo{display:flex;justify-content:space-between;font-size:12px;color:#d97706;margin-top:4px}
+      .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
+      @media print{body{padding:8px}}
+    </style></head><body>
+    <h2>🏢 Edificio Central</h2>
+    <p class="sub">Comprobante Oficial de Pago</p>
+    <div class="box">
+      ${filas.map(([l,v])=>`<div class="fila"><span>${l}</span><span>${v}</span></div>`).join("")}
+      <div class="total"><span>Este abono</span><span>${fmt(abono?.monto||0)}</span></div>
+      <div class="saldo"><span>Total cuota: ${fmt(cuota.montoTotal)}</span><span>Saldo: ${fmt(saldo)}</span></div>
+    </div>
+    <p class="footer">✅ Verificado · ${todayStr()}</p>
+    </body></html>`;
+
+  const imprimir = () => {
+    const blob = new Blob([htmlComprobante()], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 2000);
+    };
+  };
+
+  const descargarPDF = () => {
+    const blob = new Blob([htmlComprobante()], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `comprobante-${cuota.depto}-${nro}.html`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const enviarCorreo = () => {
+    const cuerpo = [
+      "Comprobante de Pago - Edificio Central",
+      "─────────────────────────────",
+      ...filas.map(([l, v]) => `${l}: ${v}`),
+      "─────────────────────────────",
+      `Este abono: ${fmt(abono?.monto || 0)}`,
+      `Total cuota: ${fmt(cuota.montoTotal)}`,
+      `Saldo pendiente: ${fmt(saldo)}`,
+      "",
+      `Verificado: ${todayStr()}`,
+    ].join("%0D%0A");
+    const email = depto?.email || "";
+    window.open(`mailto:${email}?subject=Comprobante de Pago ${nro} - Edificio Central&body=${cuerpo}`);
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
-        <div className="text-center mb-5">
-          <div className="text-4xl mb-2">🏢</div>
-          <h2 className="text-xl font-bold text-slate-800">Edificio Central</h2>
-          <p className="text-slate-400 text-sm">Comprobante Oficial de Pago</p>
-        </div>
-        <div className="border-2 border-dashed border-indigo-200 rounded-xl p-4 mb-4 space-y-2.5 text-sm bg-indigo-50">
-          {[["N° Comprobante", `#${String(abono?.id || 1).padStart(6, "0")}`, true], ["Tipo", cuota.tipo === "ordinario" ? "Alícuota Ordinaria" : "Derrama Extraordinaria"], ["Propiedad", cuota.depto], ["Propietario", depto?.nombre || "-"], ["Período", cuota.periodoNombre], cuota.concepto && ["Concepto", cuota.concepto], ["Fecha", abono?.fecha || "-"], ["Método", abono?.metodo || "-"]].filter(Boolean).map(([l, v, b]) => (
-            <div key={l} className="flex justify-between"><span className="text-slate-500">{l}</span><span className={b ? "font-bold text-indigo-600" : "font-semibold"}>{v}</span></div>
-          ))}
-          {abono?.imagen && <img src={abono.imagen} alt="Comprobante" className="rounded-lg w-full max-h-40 object-contain border border-indigo-200 mt-1" />}
-          <div className="border-t-2 border-indigo-300 pt-2.5 flex justify-between">
-            <span className="font-bold text-slate-700">Este abono</span>
-            <span className="font-bold text-emerald-600 text-lg">{fmt(abono?.monto || 0)}</span>
+        <div id="comprobante-print">
+          <div className="text-center mb-5">
+            <div className="text-4xl mb-2">🏢</div>
+            <h2 className="text-xl font-bold text-slate-800">Edificio Central</h2>
+            <p className="text-slate-400 text-sm">Comprobante Oficial de Pago</p>
           </div>
-          <div className="flex justify-between text-xs text-slate-500"><span>Total cuota</span><span>{fmt(cuota.montoTotal)}</span></div>
-          <div className="flex justify-between text-xs font-semibold text-amber-600"><span>Saldo pendiente</span><span>{fmt(Math.max(0, cuota.montoTotal - cuota.montoPagado))}</span></div>
+          <div className="border-2 border-dashed border-indigo-200 rounded-xl p-4 mb-4 space-y-2.5 text-sm bg-indigo-50">
+            {filas.map(([l, v, b]) => (
+              <div key={l} className="flex justify-between">
+                <span className="text-slate-500">{l}</span>
+                <span className="font-semibold">{v}</span>
+              </div>
+            ))}
+            {abono?.imagen && <img src={abono.imagen} alt="Comprobante" className="rounded-lg w-full max-h-40 object-contain border border-indigo-200 mt-1" />}
+            <div className="border-t-2 border-indigo-300 pt-2.5 flex justify-between">
+              <span className="font-bold text-slate-700">Este abono</span>
+              <span className="font-bold text-emerald-600 text-lg">{fmt(abono?.monto || 0)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-500"><span>Total cuota</span><span>{fmt(cuota.montoTotal)}</span></div>
+            <div className="flex justify-between text-xs font-semibold text-amber-600"><span>Saldo pendiente</span><span>{fmt(saldo)}</span></div>
+          </div>
+          <div className="text-center text-xs text-slate-400 mb-4">✅ Verificado · {todayStr()}</div>
         </div>
-        <div className="text-center text-xs text-slate-400 mb-4">✅ Verificado · {todayStr()}</div>
-        <button onClick={onClose} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">Cerrar</button>
+        {/* Acciones */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <button onClick={imprimir} className="flex flex-col items-center gap-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 py-2.5 rounded-xl text-xs font-semibold text-slate-600 transition">
+            <span className="text-lg">🖨️</span>Imprimir
+          </button>
+          <button onClick={descargarPDF} className="flex flex-col items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2.5 rounded-xl text-xs font-semibold text-rose-600 transition">
+            <span className="text-lg">📄</span>Guardar PDF
+          </button>
+          <button onClick={enviarCorreo} className="flex flex-col items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 py-2.5 rounded-xl text-xs font-semibold text-indigo-600 transition">
+            <span className="text-lg">📧</span>Enviar correo
+          </button>
+        </div>
+        <button onClick={onClose} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-semibold hover:bg-indigo-700 text-sm">Cerrar</button>
       </div>
     </div>
   );
@@ -288,11 +384,19 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
                 </div>
               ))}
             </div>
-            <div className="px-6 pb-6 border-t border-slate-100 pt-4 flex items-center justify-between">
-              <span className="text-sm text-slate-500 font-medium">Total adeudado</span>
-              <span className="text-base font-bold text-rose-600">
-                {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
-              </span>
+            <div className="px-6 pb-4 border-t border-slate-100 pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-slate-500">Deuda período actual</span>
+                <span className="text-sm font-bold text-rose-500">
+                  {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado" && p.periodoId === morDetalle.periodoId).reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                <span className="text-sm font-bold text-slate-700">Total adeudado (todos los períodos)</span>
+                <span className="text-base font-bold text-rose-600">
+                  {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -323,7 +427,14 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
                   </div>
                   <div className="text-right">
                     <span className={`text-sm font-bold ${modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
-                    {modal === "morosos" && <p className="text-xs text-indigo-500">Ver desglose →</p>}
+                    {modal === "morosos" && (
+                      <>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Total: <span className="font-bold text-rose-700">{fmt(pagos.filter(p => p.deptoId === r.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}</span>
+                        </p>
+                        <p className="text-xs text-indigo-500">Ver desglose →</p>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -761,7 +872,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
           </thead>
           <tbody>
             {lista.map(p => {
-              const lastAbono = p.abonos?.[p.abonos.length - 1];
+              const lastAbono = p.abonos?.[p.abonos.length - 1] || (p.estado === "pagado" || p.estado === "parcial" ? { id: p.id, monto: p.montoPagado, fecha: "-", metodo: "-" } : null);
               return (
                 <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-bold text-indigo-700">{p.depto}</td>
@@ -771,7 +882,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">{fmt(p.montoPagado)}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
                   <td className="px-3 py-2.5 text-center">{estadoBadge(p)}</td>
-                  <td className="px-3 py-2.5 text-center">{lastAbono ? <button onClick={() => setComprobante({ cuota: p, abono: lastAbono })} className="text-indigo-400 hover:text-indigo-600 text-lg">🧾</button> : <span className="text-slate-200">🧾</span>}</td>
+                  <td className="px-3 py-2.5 text-center">{lastAbono ? <button onClick={() => setComprobante({ cuota: p, abono: lastAbono })} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button> : <span className="text-slate-300 text-lg cursor-not-allowed" title="Sin pagos registrados">🧾</span>}</td>
                 </tr>
               );
             })}
@@ -1171,6 +1282,7 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
   const misPagos = pagos.filter(p => p.deptoId === deptoSel).sort((a, b) => b.anio - a.anio || b.mes - a.mes);
   const cuotaActual = misPagos.find(p => p.periodoId === perActual?.id && p.tipo === "ordinario");
   const totalPagado = misPagos.filter(p => p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
+  const totalAdeudado = misPagos.filter(p => p.estado !== "pagado").reduce((a, p) => a + Math.max(0, p.montoTotal - p.montoPagado), 0);
   const dersPend = derramas.filter(d => !pagos.find(p => p.tipo === "derrama" && p.deptoId === deptoSel && p.concepto === d.titulo && p.estado === "pagado"));
   const estColor = cuotaActual?.estado === "pagado" ? "text-emerald-300" : cuotaActual?.estado === "parcial" ? "text-blue-300" : "text-amber-300";
   const estLabel = cuotaActual?.estado === "pagado" ? "✅ Al día" : cuotaActual?.estado === "parcial" ? "💧 Parcial" : "⚠️ Pendiente";
@@ -1186,9 +1298,10 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white">
         <div className="text-3xl font-bold">Propiedad {dep?.depto}</div>
         <div className="text-indigo-200 text-sm mt-1">{usuario.nombre} · Piso {dep?.piso} · {dep?.m2} m²</div>
-        <div className="mt-4 grid grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div><div className="text-indigo-200 text-xs">Cuota actual</div><div className="text-xl font-bold">{cuotaActual ? fmt(cuotaActual.montoTotal) : "-"}</div></div>
           <div><div className="text-indigo-200 text-xs">Total pagado</div><div className="text-xl font-bold">{fmt(totalPagado)}</div></div>
+          <div><div className="text-indigo-200 text-xs">Total adeudado</div><div className={`text-xl font-bold ${totalAdeudado > 0 ? "text-amber-300" : "text-emerald-300"}`}>{totalAdeudado > 0 ? fmt(totalAdeudado) : "Al día ✅"}</div></div>
           <div><div className="text-indigo-200 text-xs">Estado</div><div className={`text-xl font-bold ${estColor}`}>{estLabel}</div></div>
         </div>
       </div>
@@ -1210,7 +1323,7 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
               <td className="px-4 py-2 text-right">{fmt(p.montoTotal)}</td>
               <td className="px-4 py-2 text-right text-emerald-600">{fmt(p.montoPagado)}</td>
               <td className="px-4 py-2 text-center"><span className={`text-xs px-2 py-0.5 rounded-full ${p.estado === "pagado" ? "bg-emerald-100 text-emerald-700" : p.estado === "parcial" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>{p.estado}</span></td>
-              <td className="px-4 py-2 text-center">{last ? <button onClick={() => setComprobante({ cuota: p, abono: last })} className="text-indigo-400 hover:text-indigo-600 text-lg">🧾</button> : <span className="text-slate-200">🧾</span>}</td>
+              <td className="px-4 py-2 text-center">{(() => { const ab = last || (p.estado === "pagado" || p.estado === "parcial" ? { id: p.id, monto: p.montoPagado, fecha: "-", metodo: "-" } : null); return ab ? <button onClick={() => setComprobante({ cuota: p, abono: ab })} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button> : <span className="text-slate-300 text-lg cursor-not-allowed" title="Sin pagos registrados">🧾</span>; })()}</td>
             </tr>);
           })}</tbody>
         </table>
