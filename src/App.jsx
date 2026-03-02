@@ -5,10 +5,20 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#0ea5e9"];
-const fmt = n => `$${Number(n).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = n => {
+  const x = Number(n);
+  const v = Number.isFinite(x) ? x : 0;
+  return `$${v.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
 const fmtPct = n => `${Number(n).toFixed(4)}%`;
 const today = { d: 28, m: 1, y: 2026 };
 const todayStr = () => `${String(today.d).padStart(2, "0")}/${String(today.m + 1).padStart(2, "0")}/${today.y}`;
+
+
+const toNum = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function exportCSV(rows, cols, filename) {
@@ -623,7 +633,7 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
       return { tipo: "ordinario", depto_id: d.id, depto: d.depto, periodo_id: data.id, periodo_nombre: data.nombre, mes: data.mes, anio: data.anio, monto_total: monto, monto_pagado: 0, estado: "pendiente", abonos: [] };
     });
     const { data: dataCuotas } = await supabase.from('pagos').insert(cuotas).select();
-    const cuotasAdap = (dataCuotas || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] }));
+    const cuotasAdap = (dataCuotas || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
     setPeriodos([...periodos, perAdap]);
     setPagos([...pagos, ...cuotasAdap]);
     setShowNew(false);
@@ -785,7 +795,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const estado = montoPagado >= cuotaVirtual.montoTotal ? "pagado" : "parcial";
         const nuevo = { tipo: "derrama", depto_id: cuotaVirtual.deptoId, depto: cuotaVirtual.depto, periodo_id: cuotaVirtual.periodoId, periodo_nombre: cuotaVirtual.periodoNombre, mes: cuotaVirtual.mes, anio: cuotaVirtual.anio, monto_total: cuotaVirtual.montoTotal, monto_pagado: montoPagado, estado, abonos, concepto: cuotaVirtual.concepto };
         const { data } = await supabase.from('pagos').insert(nuevo).select().single();
-        const nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: parseFloat(data.monto_total), montoPagado: parseFloat(data.monto_pagado), abonos: data.abonos || [] };
+        const nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: toNum(data.monto_total, 0), montoPagado: toNum(data.monto_pagado, 0), abonos: data.abonos || [] };
         setPagos(p => [...p, nw]);
         setTimeout(() => setComprobante({ cuota: nw, abono: abonos[0] }), 100);
       }
@@ -899,7 +909,7 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
   const [sel, setSel] = useState(null);
   const [edit, setEdit] = useState(false);
   const [ed, setEd] = useState({});
-  const [filters, setFilters] = useState({ propietario: "", propiedad: "", piso: "todos", estado: "todos" });
+  const [filters, setFilters] = useState({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" });
   const perActual = periodos[periodos.length - 1];
   const getEst = d => { const c = pagos.find(p => p.deptoId === d.id && p.periodoId === perActual?.id && p.tipo === "ordinario"); return c?.estado === "pagado" ? "pagado" : c?.estado === "parcial" ? "parcial" : "pendiente"; };
   const getOwner = id => usuarios.find(u => u.rol === "prop" && u.deptos?.includes(id));
@@ -910,6 +920,7 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
     if (filters.propiedad && !d.depto.toLowerCase().includes(filters.propiedad.toLowerCase())) return false;
     if (filters.piso !== "todos" && String(d.piso) !== filters.piso) return false;
     if (filters.estado !== "todos" && getEst(d) !== filters.estado) return false;
+    if (filters.tipo !== "todos" && (d.tipo || "departamento") !== filters.tipo) return false;
     return true;
   }), [deptos, filters, pagos]);
   const filterConfig = [
@@ -917,11 +928,26 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
     { key: "propiedad", label: "Propiedad", type: "text", placeholder: "Ej: 2A, 3B..." },
     { key: "piso", label: "Piso", type: "select", options: pisos.map(p => ({ value: String(p), label: `Piso ${p}` })) },
     { key: "estado", label: "Estado", type: "select", options: [{ value: "pagado", label: "✅ Al día" }, { value: "parcial", label: "💧 Parcial" }, { value: "pendiente", label: "⚠️ Moroso" }] },
+    { key: "tipo", label: "Tipo", type: "select", options: [{ value: "departamento", label: "🏢 Departamento" }, { value: "casa", label: "🏠 Casa" }, { value: "local", label: "🏪 Local" }] },
   ];
-  const guardar = () => {
+  const guardar = async () => {
     const totalM2 = deptos.reduce((a, d) => d.id === sel.id ? a + Number(ed.m2) : a + d.m2, 0);
-    setDeptos(deptos.map(d => d.id === sel.id ? { ...d, ...ed, m2: Number(ed.m2), coef: parseFloat((Number(ed.m2) / totalM2 * 100).toFixed(4)) } : d));
-    setSel({ ...sel, ...ed }); setEdit(false);
+    const coef = parseFloat((Number(ed.m2) / totalM2 * 100).toFixed(4));
+    const payload = {
+      depto: ed.depto,
+      piso: Number(ed.piso),
+      m2: Number(ed.m2),
+      coef,
+      tipo: ed.tipo || "departamento",
+      alicuota_fija: Number(ed.alicuotaFija),
+      metodo_calculo: ed.metodoCalculo,
+    };
+    const { error } = await supabase.from('deptos').update(payload).eq('id', sel.id);
+    if (error) { alert("Error al guardar: " + error.message); return; }
+    const updated = { ...sel, ...ed, m2: Number(ed.m2), coef };
+    setDeptos(deptos.map(d => d.id === sel.id ? updated : d));
+    setSel(updated);
+    setEdit(false);
   };
   const estColor = e => e === "pagado" ? "text-emerald-600" : e === "parcial" ? "text-blue-500" : "text-rose-500";
   const estIcon = e => e === "pagado" ? "✅" : e === "parcial" ? "💧" : "⚠️";
@@ -935,7 +961,7 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
             <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center text-2xl font-bold text-indigo-700">{sel.depto}</div>
             <div><h3 className="text-xl font-bold text-slate-800">Propiedad {sel.depto}</h3><p className="text-slate-500 text-sm">Piso {sel.piso} · {sel.m2} m² · Coef. {fmtPct(sel.coef)}</p></div>
           </div>
-          {rol === "admin" && <button onClick={() => { setEdit(!edit); setEd({ m2: sel.m2, alicuotaFija: sel.alicuotaFija, metodoCalculo: sel.metodoCalculo }); }} className="self-start text-sm border border-indigo-200 px-3 py-1.5 rounded-xl text-indigo-600 hover:bg-indigo-50">✏️ Editar</button>}
+          {rol === "admin" && <button onClick={() => { setEdit(!edit); setEd({ depto: sel.depto, piso: sel.piso, m2: sel.m2, tipo: sel.tipo || "departamento", alicuotaFija: sel.alicuotaFija, metodoCalculo: sel.metodoCalculo }); }} className="self-start text-sm border border-indigo-200 px-3 py-1.5 rounded-xl text-indigo-600 hover:bg-indigo-50">✏️ Editar</button>}
         </div>
         <div>
           <p className="text-xs text-slate-500 mb-1 font-semibold">Propietario(s):</p>
@@ -949,14 +975,35 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
         </div>
         {edit && (
           <div className="grid md:grid-cols-3 gap-3">
-            <div><label className="text-xs text-slate-500 mb-1 block">m²</label><input type="number" value={ed.m2} onChange={e => setEd({ ...ed, m2: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
-            <div><label className="text-xs text-slate-500 mb-1 block">Alícuota fija ($)</label><input type="number" value={ed.alicuotaFija} onChange={e => setEd({ ...ed, alicuotaFija: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
-            <div><label className="text-xs text-slate-500 mb-1 block">Método</label>
-              <select value={ed.metodoCalculo} onChange={e => setEd({ ...ed, metodoCalculo: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
-                <option value="coeficiente">Por coeficiente</option><option value="fijo">Monto fijo</option>
+            <div><label className="text-xs text-slate-500 mb-1 block">Nombre / Código</label>
+              <input value={ed.depto} onChange={e => setEd({ ...ed, depto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" placeholder="Ej: 1A, 2B..." />
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Piso</label>
+              <input type="number" value={ed.piso} onChange={e => setEd({ ...ed, piso: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Tipo</label>
+              <select value={ed.tipo || "departamento"} onChange={e => setEd({ ...ed, tipo: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                <option value="departamento">🏢 Departamento</option>
+                <option value="casa">🏠 Casa</option>
+                <option value="local">🏪 Local</option>
               </select>
             </div>
-            <button onClick={guardar} className="md:col-span-3 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">Guardar</button>
+            <div><label className="text-xs text-slate-500 mb-1 block">m²</label>
+              <input type="number" value={ed.m2} onChange={e => setEd({ ...ed, m2: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Alícuota fija ($)</label>
+              <input type="number" value={ed.alicuotaFija} onChange={e => setEd({ ...ed, alicuotaFija: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Método de cálculo</label>
+              <select value={ed.metodoCalculo} onChange={e => setEd({ ...ed, metodoCalculo: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                <option value="coeficiente">Por coeficiente</option>
+                <option value="fijo">Monto fijo</option>
+              </select>
+            </div>
+            <div className="md:col-span-3 flex gap-2">
+              <button onClick={() => setEdit(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={guardar} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar cambios</button>
+            </div>
           </div>
         )}
       </div>
@@ -979,7 +1026,7 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>
-      <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ propietario: "", propiedad: "", piso: "todos", estado: "todos" })} />
+      <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" })} />
       <ResultCount total={deptos.length} filtered={filtradas.length} onExport={() => exportCSV(filtradas.map(d => ({ ...d, propietario: getOwner(d.id)?.nombre || "-", estado: estLabel(getEst(d)) })), [{ key: "depto", label: "Propiedad" }, { key: "piso", label: "Piso" }, { key: "m2", label: "m²" }, { key: "coef", label: "Coef%" }, { key: "propietario", label: "Propietario" }, { key: "estado", label: "Estado" }], "propiedades.csv")} />
       <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
         {filtradas.map(d => {
@@ -987,8 +1034,8 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
           return (
             <div key={d.id} onClick={() => setSel(d)} className="bg-white border border-slate-200 rounded-2xl p-3 cursor-pointer hover:border-indigo-300 hover:shadow-md transition">
               <div className="text-xl font-bold text-indigo-600">{d.depto}</div>
+              <div className="text-xs text-slate-400">{d.tipo === "casa" ? "🏠" : d.tipo === "local" ? "🏪" : "🏢"} {d.m2}m²</div>
               <div className="text-xs text-slate-500 truncate">{owner?.nombre?.split(" ")[0] || "—"}</div>
-              <div className="text-xs text-slate-400">{d.m2}m²</div>
               <div className={`text-xs mt-1 font-semibold ${estColor(est)}`}>{estIcon(est)} {estLabel(est)}</div>
             </div>
           );
@@ -1008,7 +1055,7 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
     const nueva = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), fecha: todayStr(), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, estado: "activa" };
     const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
     if (error) { alert("Error al guardar derrama: " + error.message); return; }
-    setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
+    setDerramas([...derramas, { ...data, montoTotal: toNum(data.monto_total, 0) }]);
     setShowNew(false);
   };
   return (
@@ -1366,13 +1413,14 @@ export default function App() {
     ]);
     const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
     const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
-    const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] }));
+    const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
+    const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: toNum(d.monto_total, 0) }));
     const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
     setDeptos(deptosAdap);
     setUsuarios(usuariosAdap);
     setPeriodos(periodosAdap);
     setPagos(pagosAdap);
-    setDerramas(dataDerramas || []);
+    setDerramas(derramasAdap);
     setEgresos(dataEgresos || []);
     setCargando(false);
   };
