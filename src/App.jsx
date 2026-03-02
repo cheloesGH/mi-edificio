@@ -1438,31 +1438,53 @@ export default function App() {
   const [derramas, setDerramas] = useState([]);
   const [egresos, setEgresos] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => { cargarDatos(); }, []);
 
   const cargarDatos = async () => {
     setCargando(true);
-    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }] = await Promise.all([
-      supabase.from('deptos').select('*').order('id'),
-      supabase.from('usuarios').select('*').order('id'),
-      supabase.from('periodos').select('*').order('id'),
-      supabase.from('pagos').select('*').order('id'),
-      supabase.from('derramas').select('*').order('id'),
-      supabase.from('egresos').select('*').order('id')
-    ]);
-    const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
-    const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
-    const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
-    const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: toNum(d.monto_total, 0) }));
-    const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
-    setDeptos(deptosAdap);
-    setUsuarios(usuariosAdap);
-    setPeriodos(periodosAdap);
-    setPagos(pagosAdap);
-    setDerramas(derramasAdap);
-    setEgresos(dataEgresos || []);
-    setCargando(false);
+    setLoadError(null);
+    try {
+      const [rDeptos, rUsuarios, rPeriodos, rPagos, rDerramas, rEgresos] = await Promise.all([
+        supabase.from('deptos').select('*').order('id'),
+        supabase.from('usuarios').select('*').order('id'),
+        supabase.from('periodos').select('*').order('id'),
+        supabase.from('pagos').select('*').order('id'),
+        supabase.from('derramas').select('*').order('id'),
+        supabase.from('egresos').select('*').order('id')
+      ]);
+
+      const errors = [rDeptos.error, rUsuarios.error, rPeriodos.error, rPagos.error, rDerramas.error, rEgresos.error].filter(Boolean);
+      if (errors.length) {
+        throw new Error(errors.map(e => e.message || String(e)).join(" | "));
+      }
+
+      const dataDeptos = rDeptos.data;
+      const dataUsuarios = rUsuarios.data;
+      const dataPeriodos = rPeriodos.data;
+      const dataPagos = rPagos.data;
+      const dataDerramas = rDerramas.data;
+      const dataEgresos = rEgresos.data;
+
+      const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
+      const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
+      const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: toNum(p.monto_total, 0), montoPagado: toNum(p.monto_pagado, 0), abonos: p.abonos || [] }));
+      const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: toNum(d.monto_total, 0) }));
+      const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
+
+      setDeptos(deptosAdap);
+      setUsuarios(usuariosAdap);
+      setPeriodos(periodosAdap);
+      setPagos(pagosAdap);
+      setDerramas(derramasAdap);
+      setEgresos(dataEgresos || []);
+    } catch (e) {
+      console.error("Error cargando datos:", e);
+      setLoadError(e?.message || "Error cargando datos. Revisa tu conexión o Supabase.");
+    } finally {
+      setCargando(false);
+    }
   };
 
   const login = u => { setUsuario(u); setTab(PERMS[u.rol][0]); };
@@ -1486,6 +1508,32 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
+
+      {loadError && (
+        <div className="fixed top-4 left-4 right-4 z-50">
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start justify-between gap-3 shadow-lg">
+            <div>
+              <div className="font-semibold text-red-800">⚠️ Error cargando datos</div>
+              <div className="text-sm text-red-700 mt-1 break-words">{loadError}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={cargarDatos}
+                className="px-3 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+              >
+                Reintentar
+              </button>
+              <button
+                onClick={() => setLoadError(null)}
+                className="px-3 py-2 rounded-xl bg-white border border-red-200 text-red-700 text-sm font-semibold hover:bg-red-50"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ── SIDEBAR OSCURO (desktop) ── */}
       <aside className="hidden lg:flex flex-col w-60 bg-gray-900 text-white min-h-screen flex-shrink-0">
