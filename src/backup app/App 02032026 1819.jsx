@@ -298,7 +298,7 @@ function Login({ usuarios, onLogin }) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab }) {
+function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
@@ -329,25 +329,18 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const pct = ingMes + pendMes > 0 ? ((ingMes / (ingMes + pendMes)) * 100).toFixed(1) : 0;
 
   const cards = [
-    { l: "Ingresos", v: fmt(ingMes), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos" },
-    { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: "egresos" },
-    { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes" },
-    { l: "En Mora", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos" },
-    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo" },
-    { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: "derramas_nav" },
+    { l: "Ingresos", v: fmt(ingMes), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos", hint: "Clic para ver detalle" },
+    { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: null },
+    { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes", hint: "Clic para ver detalle" },
+    { l: "Morosos", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos", hint: "Clic para ver detalle" },
+    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: null },
+    { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: null },
   ];
 
-  const egresosMes = egresos.filter(e => e.mes === per?.mes && e.anio === per?.anio);
-  const flujoRows = [
-    ...pagosCobrados.map(r => ({ concepto: `Cuota ${r.depto}`, tipo: "Ingreso", monto: r.montoPagado, _color: "text-emerald-600" })),
-    ...egresosMes.map(e => ({ concepto: e.concepto, tipo: "Egreso", monto: e.monto, _color: "text-rose-600" })),
-  ];
   const modalData = {
-    ingresos: { title: "Detalle de Ingresos", desc: `Pagos cobrados en ${per?.nombre}`, rows: pagosCobrados, totalLabel: "Total cobrado", total: ingMes, totalColor: "text-emerald-600", rowColor: "bg-emerald-50", amountColor: "text-emerald-600", amount: r => r.montoPagado },
-    egresos: { title: "Detalle de Egresos", desc: `Gastos registrados en ${per?.nombre}`, rows: egresosMes, totalLabel: "Total egresado", total: egrMes, totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.monto, labelKey: "concepto" },
-    pendientes: { title: "Pagos Pendientes", desc: `Saldos por cobrar en ${per?.nombre}`, rows: pagosPendientes, totalLabel: "Total pendiente", total: pendMes, totalColor: "text-amber-600", rowColor: "bg-amber-50", amountColor: "text-amber-600", amount: r => r.montoTotal - r.montoPagado },
-    morosos: { title: "Propietarios en Mora", desc: "Departamentos con saldo pendiente", rows: morososList, totalLabel: "Total adeudado", total: morososList.reduce((a, p) => a + p.saldo, 0), totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.saldo },
-    flujo: { title: "Detalle Flujo Neto", desc: `Composición del flujo en ${per?.nombre}`, rows: flujoRows, totalLabel: `Flujo neto (${ingMes - egrMes >= 0 ? "+" : ""}${fmt(ingMes - egrMes)})`, total: ingMes - egrMes, totalColor: ingMes - egrMes >= 0 ? "text-emerald-600" : "text-rose-600", rowColor: "bg-slate-50", amountColor: null, amount: r => r.monto, labelKey: "concepto" },
+    ingresos: { title: "Detalle de Ingresos", desc: `Pagos cobrados en ${per?.nombre}`, rows: pagosCobrados, totalLabel: "Total cobrado", total: ingMes, totalColor: "text-emerald-600", rowColor: "bg-slate-50", amountColor: "text-emerald-600", amount: r => r.montoPagado },
+    pendientes: { title: "Pagos Pendientes", desc: `Saldos por cobrar en ${per?.nombre}`, rows: pagosPendientes, totalLabel: "Total pendiente", total: pendMes, totalColor: "text-amber-600", rowColor: "bg-slate-50", amountColor: "text-amber-600", amount: r => r.montoTotal - r.montoPagado },
+    morosos: { title: "Propietarios Morosos", desc: "Departamentos con saldo pendiente", rows: morososList, totalLabel: "Total adeudado", total: morososList.reduce((a, p) => a + p.saldo, 0), totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.saldo },
   };
 
   const fmtK = v => `$${(v / 1000).toFixed(0)}k`;
@@ -425,16 +418,16 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
             </div>
             <div className="p-6 space-y-2">
               {modalData[modal].rows.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Sin registros.</p>}
-              {modalData[modal].rows.slice(0, 30).map((r, i) => (
+              {modalData[modal].rows.slice(0, 20).map((r, i) => (
                 <div key={i}
                   onClick={() => modal === "morosos" ? setMorDetalle(r) : null}
                   className={`flex items-center justify-between p-3 rounded-xl ${modalData[modal].rowColor} ${modal === "morosos" ? "cursor-pointer hover:bg-rose-200 transition" : ""}`}>
                   <div>
-                    <p className="text-sm font-bold text-slate-700">{modalData[modal].labelKey ? r[modalData[modal].labelKey] : r.depto}</p>
-                    <p className="text-xs text-slate-400">{r.tipo || r.propietario || r.periodoNombre || r.cat || ""}</p>
+                    <p className="text-sm font-bold text-slate-700">{r.depto}</p>
+                    <p className="text-xs text-slate-400">{r.propietario || r.periodoNombre || r.tipo}</p>
                   </div>
                   <div className="text-right">
-                    <span className={`text-sm font-bold ${r._color || modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
+                    <span className={`text-sm font-bold ${modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
                     {modal === "morosos" && (
                       <>
                         <p className="text-xs text-slate-400 mt-0.5">
@@ -485,7 +478,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {cards.map(c => (
           <div key={c.l}
-            onClick={() => { if (c.key === "derramas_nav") setTab("derramas"); else if (c.key) setModal(c.key); }}
+            onClick={() => c.key && setModal(c.key)}
             className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-4 lg:p-5 flex items-start justify-between transition-all duration-200 ${c.key ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{c.l}</p>
@@ -567,10 +560,10 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h3 className="font-bold text-slate-700 text-sm">Top en Mora</h3>
+              <h3 className="font-bold text-slate-700 text-sm">Top Morosos</h3>
               <p className="text-xs text-slate-400">Residentes con mayor deuda</p>
             </div>
-            <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2.5 py-1 rounded-full">{morososList.length} en mora</span>
+            <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2.5 py-1 rounded-full">{morososList.length} con deuda</span>
           </div>
           <div className="space-y-2">
             {morososList.slice(0, 5).map((p, i) => (
@@ -584,7 +577,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
                 <span className="text-sm font-bold text-rose-600 flex-shrink-0">{fmt(p.saldo)}</span>
               </div>
             ))}
-            {morososList.length === 0 && <p className="text-sm text-slate-400 text-center py-6">🎉 Sin propietarios en mora este período</p>}
+            {morososList.length === 0 && <p className="text-sm text-slate-400 text-center py-6">🎉 Sin morosos este período</p>}
           </div>
           {morososList.length > 5 && (
             <button onClick={() => setModal("morosos")} className="w-full mt-3 text-xs text-indigo-600 font-semibold hover:underline">Ver todos ({morososList.length}) →</button>
@@ -1704,7 +1697,7 @@ export default function App() {
 
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
-          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} />}
+          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={usuario.rol} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={usuario.rol} />}

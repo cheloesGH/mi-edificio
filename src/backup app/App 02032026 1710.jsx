@@ -298,13 +298,12 @@ function Login({ usuarios, onLogin }) {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab }) {
+function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
 
-    const ult3 = periodos.slice(-3).reverse();
-const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.length - 1];
+  const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.length - 1];
   const cuotas = pagos.filter(p => p.periodoId === per?.id && p.tipo === "ordinario");
 
   const ingMes = cuotas.filter(p => p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
@@ -329,25 +328,18 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const pct = ingMes + pendMes > 0 ? ((ingMes / (ingMes + pendMes)) * 100).toFixed(1) : 0;
 
   const cards = [
-    { l: "Ingresos", v: fmt(ingMes), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos" },
-    { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: "egresos" },
-    { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes" },
-    { l: "En Mora", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos" },
-    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo" },
-    { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: "derramas_nav" },
+    { l: "Ingresos", v: fmt(ingMes), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos", hint: "Clic para ver detalle" },
+    { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: null },
+    { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes", hint: "Clic para ver detalle" },
+    { l: "Morosos", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos", hint: "Clic para ver detalle" },
+    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: null },
+    { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: null },
   ];
 
-  const egresosMes = egresos.filter(e => e.mes === per?.mes && e.anio === per?.anio);
-  const flujoRows = [
-    ...pagosCobrados.map(r => ({ concepto: `Cuota ${r.depto}`, tipo: "Ingreso", monto: r.montoPagado, _color: "text-emerald-600" })),
-    ...egresosMes.map(e => ({ concepto: e.concepto, tipo: "Egreso", monto: e.monto, _color: "text-rose-600" })),
-  ];
   const modalData = {
-    ingresos: { title: "Detalle de Ingresos", desc: `Pagos cobrados en ${per?.nombre}`, rows: pagosCobrados, totalLabel: "Total cobrado", total: ingMes, totalColor: "text-emerald-600", rowColor: "bg-emerald-50", amountColor: "text-emerald-600", amount: r => r.montoPagado },
-    egresos: { title: "Detalle de Egresos", desc: `Gastos registrados en ${per?.nombre}`, rows: egresosMes, totalLabel: "Total egresado", total: egrMes, totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.monto, labelKey: "concepto" },
-    pendientes: { title: "Pagos Pendientes", desc: `Saldos por cobrar en ${per?.nombre}`, rows: pagosPendientes, totalLabel: "Total pendiente", total: pendMes, totalColor: "text-amber-600", rowColor: "bg-amber-50", amountColor: "text-amber-600", amount: r => r.montoTotal - r.montoPagado },
-    morosos: { title: "Propietarios en Mora", desc: "Departamentos con saldo pendiente", rows: morososList, totalLabel: "Total adeudado", total: morososList.reduce((a, p) => a + p.saldo, 0), totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.saldo },
-    flujo: { title: "Detalle Flujo Neto", desc: `Composición del flujo en ${per?.nombre}`, rows: flujoRows, totalLabel: `Flujo neto (${ingMes - egrMes >= 0 ? "+" : ""}${fmt(ingMes - egrMes)})`, total: ingMes - egrMes, totalColor: ingMes - egrMes >= 0 ? "text-emerald-600" : "text-rose-600", rowColor: "bg-slate-50", amountColor: null, amount: r => r.monto, labelKey: "concepto" },
+    ingresos: { title: "Detalle de Ingresos", desc: `Pagos cobrados en ${per?.nombre}`, rows: pagosCobrados, totalLabel: "Total cobrado", total: ingMes, totalColor: "text-emerald-600", rowColor: "bg-slate-50", amountColor: "text-emerald-600", amount: r => r.montoPagado },
+    pendientes: { title: "Pagos Pendientes", desc: `Saldos por cobrar en ${per?.nombre}`, rows: pagosPendientes, totalLabel: "Total pendiente", total: pendMes, totalColor: "text-amber-600", rowColor: "bg-slate-50", amountColor: "text-amber-600", amount: r => r.montoTotal - r.montoPagado },
+    morosos: { title: "Propietarios Morosos", desc: "Departamentos con saldo pendiente", rows: morososList, totalLabel: "Total adeudado", total: morososList.reduce((a, p) => a + p.saldo, 0), totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.saldo },
   };
 
   const fmtK = v => `$${(v / 1000).toFixed(0)}k`;
@@ -425,16 +417,16 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
             </div>
             <div className="p-6 space-y-2">
               {modalData[modal].rows.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Sin registros.</p>}
-              {modalData[modal].rows.slice(0, 30).map((r, i) => (
+              {modalData[modal].rows.slice(0, 20).map((r, i) => (
                 <div key={i}
                   onClick={() => modal === "morosos" ? setMorDetalle(r) : null}
                   className={`flex items-center justify-between p-3 rounded-xl ${modalData[modal].rowColor} ${modal === "morosos" ? "cursor-pointer hover:bg-rose-200 transition" : ""}`}>
                   <div>
-                    <p className="text-sm font-bold text-slate-700">{modalData[modal].labelKey ? r[modalData[modal].labelKey] : r.depto}</p>
-                    <p className="text-xs text-slate-400">{r.tipo || r.propietario || r.periodoNombre || r.cat || ""}</p>
+                    <p className="text-sm font-bold text-slate-700">{r.depto}</p>
+                    <p className="text-xs text-slate-400">{r.propietario || r.periodoNombre || r.tipo}</p>
                   </div>
                   <div className="text-right">
-                    <span className={`text-sm font-bold ${r._color || modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
+                    <span className={`text-sm font-bold ${modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
                     {modal === "morosos" && (
                       <>
                         <p className="text-xs text-slate-400 mt-0.5">
@@ -465,27 +457,17 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
           <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
           <p className="text-xs text-slate-400">Resumen general del edificio</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <select value={periodoId} onChange={e => setPeriodoId(Number(e.target.value))}
-            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white shadow-sm">
-            {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          </select>
-          <div className="flex gap-2">
-            {ult3.map(p => (
-              <button key={p.id} onClick={() => setPeriodoId(p.id)}
-                className={`px-3 py-2 rounded-xl text-sm border shadow-sm ${Number(periodoId) === p.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}>
-                {p.nombre}
-              </button>
-            ))}
-          </div>
-        </div>
+        <select value={periodoId} onChange={e => setPeriodoId(Number(e.target.value))}
+          className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white shadow-sm">
+          {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
       </div>
 
       {/* ── Tarjetas métricas ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {cards.map(c => (
           <div key={c.l}
-            onClick={() => { if (c.key === "derramas_nav") setTab("derramas"); else if (c.key) setModal(c.key); }}
+            onClick={() => c.key && setModal(c.key)}
             className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-4 lg:p-5 flex items-start justify-between transition-all duration-200 ${c.key ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{c.l}</p>
@@ -567,10 +549,10 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
           <div className="flex justify-between items-center mb-4">
             <div>
-              <h3 className="font-bold text-slate-700 text-sm">Top en Mora</h3>
+              <h3 className="font-bold text-slate-700 text-sm">Top Morosos</h3>
               <p className="text-xs text-slate-400">Residentes con mayor deuda</p>
             </div>
-            <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2.5 py-1 rounded-full">{morososList.length} en mora</span>
+            <span className="text-xs bg-rose-100 text-rose-600 font-semibold px-2.5 py-1 rounded-full">{morososList.length} con deuda</span>
           </div>
           <div className="space-y-2">
             {morososList.slice(0, 5).map((p, i) => (
@@ -584,7 +566,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
                 <span className="text-sm font-bold text-rose-600 flex-shrink-0">{fmt(p.saldo)}</span>
               </div>
             ))}
-            {morososList.length === 0 && <p className="text-sm text-slate-400 text-center py-6">🎉 Sin propietarios en mora este período</p>}
+            {morososList.length === 0 && <p className="text-sm text-slate-400 text-center py-6">🎉 Sin morosos este período</p>}
           </div>
           {morososList.length > 5 && (
             <button onClick={() => setModal("morosos")} className="w-full mt-3 text-xs text-indigo-600 font-semibold hover:underline">Ver todos ({morososList.length}) →</button>
@@ -757,20 +739,6 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const [revertir, setRevertir] = useState(null);
   const [fOrd, setFOrd] = useState({ periodo: periodos[periodos.length - 1]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
   const [fDer, setFDer] = useState({ derrama: derramas[0]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
-  const ult3Periodos = useMemo(() => {
-    const arr = Array.isArray(periodos) ? [...periodos] : [];
-    // Ordenar por id ascendente y tomar los 3 últimos (más recientes)
-    arr.sort((a, b) => (a?.id || 0) - (b?.id || 0));
-    return arr.slice(-3).reverse();
-  }, [periodos]);
-
-  const ult3Derramas = useMemo(() => {
-    const arr = Array.isArray(derramas) ? [...derramas] : [];
-    // Ordenar por id descendente y tomar las 3 más recientes
-    arr.sort((a, b) => (b?.id || 0) - (a?.id || 0));
-    return arr.slice(0, 3);
-  }, [derramas]);
-
   const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
   const getPiso = depto => depto ? depto[0] : "";
   const ordBase = pagos.filter(p => p.periodoId === Number(fOrd.periodo) && p.tipo === "ordinario");
@@ -870,29 +838,13 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
       </div>
       <div className="flex gap-3">
         {tabP === "ordinarios" ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={fOrd.periodo} onChange={e => setFOrd({ ...fOrd, periodo: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-              {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
-            {ult3Periodos.map(p => (
-              <button key={p.id} onClick={() => setFOrd({ ...fOrd, periodo: p.id })}
-                className={`px-3 py-2 rounded-xl text-sm border shadow-sm ${Number(fOrd.periodo) === p.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}>
-                {p.nombre}
-              </button>
-            ))}
-          </div>
+          <select value={fOrd.periodo} onChange={e => setFOrd({ ...fOrd, periodo: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+            {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={fDer.derrama} onChange={e => setFDer({ ...fDer, derrama: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-              {derramas.map(d => <option key={d.id} value={d.id}>{d.titulo}</option>)}
-            </select>
-            {ult3Derramas.map(d => (
-              <button key={d.id} onClick={() => setFDer({ ...fDer, derrama: d.id })}
-                className={`px-3 py-2 rounded-xl text-sm border shadow-sm ${Number(fDer.derrama) === d.id ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"}`}>
-                {d.titulo}
-              </button>
-            ))}
-          </div>
+          <select value={fDer.derrama} onChange={e => setFDer({ ...fDer, derrama: Number(e.target.value) })} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
+            {derramas.map(d => <option key={d.id} value={d.id}>{d.titulo}</option>)}
+          </select>
         )}
       </div>
       <FilterBar filters={tabP === "ordinarios" ? fOrd : fDer} setFilters={tabP === "ordinarios" ? setFOrd : setFDer} config={tabP === "ordinarios" ? ordFilterConfig : derFilterConfig} onClear={tabP === "ordinarios" ? clearOrd : clearDer} />
@@ -975,9 +927,7 @@ function Propiedades({ deptos, setDeptos, pagos, periodos, usuarios, rol }) {
   const [edit, setEdit] = useState(false);
   const [ed, setEd] = useState({});
   const [filters, setFilters] = useState({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" });
-    const [showNew, setShowNew] = useState(false);
-  const [nuevo, setNuevo] = useState({ depto: "", piso: "", m2: "", tipo: "departamento", alicuotaFija: "", metodoCalculo: "coeficiente" });
-const perActual = periodos[periodos.length - 1];
+  const perActual = periodos[periodos.length - 1];
   const getEst = d => { const c = pagos.find(p => p.deptoId === d.id && p.periodoId === perActual?.id && p.tipo === "ordinario"); return c?.estado === "pagado" ? "pagado" : c?.estado === "parcial" ? "parcial" : "pendiente"; };
   const getOwner = id => usuarios.find(u => u.rol === "prop" && u.deptos?.includes(id));
   const pisos = [...new Set(deptos.map(d => d.piso))].sort();
@@ -997,41 +947,7 @@ const perActual = periodos[periodos.length - 1];
     { key: "estado", label: "Estado", type: "select", options: [{ value: "pagado", label: "✅ Al día" }, { value: "parcial", label: "💧 Parcial" }, { value: "pendiente", label: "⚠️ Moroso" }] },
     { key: "tipo", label: "Tipo", type: "select", options: [{ value: "departamento", label: "🏢 Departamento" }, { value: "casa", label: "🏠 Casa" }, { value: "local", label: "🏪 Local" }] },
   ];
-  
-  const crearNuevo = async () => {
-    if (rol !== "admin") return;
-    if (!nuevo.depto || !nuevo.m2) { alert("Completa al menos Departamento y m²."); return; }
-    const nuevoM2 = Number(nuevo.m2);
-    if (!Number.isFinite(nuevoM2) || nuevoM2 <= 0) { alert("m² inválidos."); return; }
-
-    // 1) Insertar primero con coef provisional; luego recalculamos todos.
-    const provisional = {
-      depto: nuevo.depto,
-      piso: Number(nuevo.piso || 0),
-      m2: nuevoM2,
-      coef: 0,
-      tipo: nuevo.tipo || "departamento",
-      alicuota_fija: Number(nuevo.alicuotaFija || 0),
-      metodo_calculo: nuevo.metodoCalculo || "coeficiente",
-    };
-    const { data: inserted, error: insErr } = await supabase.from('deptos').insert(provisional).select().single();
-    if (insErr) { alert("Error al crear propiedad: " + insErr.message); return; }
-
-    const all = [...deptos, { ...inserted, alicuotaFija: inserted.alicuota_fija, metodoCalculo: inserted.metodo_calculo }];
-    const totalM2 = all.reduce((a, d) => a + Number(d.m2 || 0), 0);
-    const withCoef = all.map(d => {
-      const coef = totalM2 > 0 ? parseFloat(((Number(d.m2) / totalM2) * 100).toFixed(4)) : 0;
-      return { ...d, coef };
-    });
-
-    // Persistir coeficientes recalculados
-    await Promise.all(withCoef.map(d => supabase.from('deptos').update({ coef: d.coef }).eq('id', d.id)));
-
-    setDeptos(withCoef.map(d => ({ ...d, alicuotaFija: d.alicuotaFija ?? d.alicuota_fija, metodoCalculo: d.metodoCalculo ?? d.metodo_calculo })));
-    setShowNew(false);
-    setNuevo({ depto: "", piso: "", m2: "", tipo: "departamento", alicuotaFija: "", metodoCalculo: "coeficiente" });
-  };
-const guardar = async () => {
+  const guardar = async () => {
     const totalM2 = deptos.reduce((a, d) => d.id === sel.id ? a + Number(ed.m2) : a + d.m2, 0);
     const coef = parseFloat((Number(ed.m2) / totalM2 * 100).toFixed(4));
     const payload = {
@@ -1126,66 +1042,8 @@ const guardar = async () => {
   );
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3"><h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>{rol === "admin" && <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700">+ Nueva Propiedad</button>}</div>
-      
-      {showNew && (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-lg">Nueva Propiedad</h3>
-        <button onClick={() => setShowNew(false)} className="text-slate-500 hover:text-slate-700">✕</button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Propiedad (depto)</label>
-          <input value={nuevo.depto} onChange={e => setNuevo({ ...nuevo, depto: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="Ej: 2A, 3B, Local 1" />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500">Piso</label>
-          <input value={nuevo.piso} onChange={e => setNuevo({ ...nuevo, piso: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="Ej: 2" />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500">m²</label>
-          <input value={nuevo.m2} onChange={e => setNuevo({ ...nuevo, m2: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="Ej: 85" />
-        </div>
-        <div>
-          <label className="text-xs text-slate-500">Tipo</label>
-          <select value={nuevo.tipo} onChange={e => setNuevo({ ...nuevo, tipo: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-            <option value="departamento">🏢 Departamento</option>
-            <option value="casa">🏠 Casa</option>
-            <option value="local">🏪 Local</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-slate-500">Método cálculo</label>
-          <select value={nuevo.metodoCalculo} onChange={e => setNuevo({ ...nuevo, metodoCalculo: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white">
-            <option value="coeficiente">Coeficiente</option>
-            <option value="fijo">Fijo</option>
-          </select>
-        </div>
-        <div className="col-span-2">
-          <label className="text-xs text-slate-500">Alícuota fija (si aplica)</label>
-          <input value={nuevo.alicuotaFija} onChange={e => setNuevo({ ...nuevo, alicuotaFija: e.target.value })}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="Ej: 45.00" />
-          <p className="text-[11px] text-slate-400 mt-1">Si el método es “Fijo”, este valor se usa para cuotas ordinarias.</p>
-        </div>
-      </div>
-
-      <div className="flex gap-3 pt-2">
-        <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-        <button onClick={crearNuevo} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">Guardar</button>
-      </div>
-    </div>
-  </div>
-)}
-
-<FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" })} />
+      <h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>
+      <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ propietario: "", propiedad: "", piso: "todos", estado: "todos", tipo: "todos" })} />
       <ResultCount total={deptos.length} filtered={filtradas.length} onExport={() => exportCSV(filtradas.map(d => ({ ...d, propietario: getOwner(d.id)?.nombre || "-", estado: estLabel(getEst(d)) })), [{ key: "depto", label: "Propiedad" }, { key: "piso", label: "Piso" }, { key: "m2", label: "m²" }, { key: "coef", label: "Coef%" }, { key: "propietario", label: "Propietario" }, { key: "estado", label: "Estado" }], "propiedades.csv")} />
       <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
         {filtradas.map(d => {
@@ -1275,7 +1133,7 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
 function Egresos({ egresos, setEgresos, rol }) {
   const [filters, setFilters] = useState({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", soporte: null });
+  const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "" });
   const CATS = ["Mantenimiento", "Servicios", "Personal", "Administrativo", "Imprevistos"];
   const filterConfig = [
     { key: "mes", label: "Mes", type: "select", options: MESES.map((m, i) => ({ value: String(i), label: m })), placeholder: "Todos los meses" },
@@ -1298,12 +1156,12 @@ function Egresos({ egresos, setEgresos, rol }) {
     const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
     const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
-    const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha, soporte: form.soporte || null };
+    const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha };
     const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
     if (error) { alert("Error al guardar egreso: " + error.message); return; }
     setEgresos([...egresos, data]);
     setShowNew(false);
-    setForm({ concepto: "", cat: "Mantenimiento", monto: "", soporte: null });
+    setForm({ concepto: "", cat: "Mantenimiento", monto: "" });
   };
   const clearFilters = () => setFilters({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
   return (
@@ -1312,7 +1170,6 @@ function Egresos({ egresos, setEgresos, rol }) {
         <h2 className="text-2xl font-bold text-slate-800">Egresos del Edificio</h2>
         <button onClick={() => setShowNew(true)} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>
       </div>
-      
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={clearFilters} />
       <ResultCount total={egresos.length} filtered={filtrados.length} onExport={() => exportCSV(filtrados, [{ key: "concepto", label: "Concepto" }, { key: "cat", label: "Categoría" }, { key: "monto", label: "Monto" }, { key: "fecha", label: "Fecha" }], "egresos.csv")} />
       {showNew && (
@@ -1326,25 +1183,7 @@ function Egresos({ egresos, setEgresos, rol }) {
                 {CATS.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
-            
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Soporte (foto/imagen)</label>
-              <input type="file" accept="image/*" onChange={e => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                const r = new FileReader();
-                r.onload = ev => setForm({ ...form, soporte: ev.target.result });
-                r.readAsDataURL(f);
-              }} className="w-full text-sm" />
-              {form.soporte && (
-                <div className="mt-2 flex items-center gap-2">
-                  <img src={form.soporte} alt="soporte" className="h-14 w-14 object-cover rounded-lg border" />
-                  <a href={form.soporte} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">Ver</a>
-                  <button onClick={() => setForm({ ...form, soporte: null })} className="text-sm text-slate-500 hover:underline">Quitar</button>
-                </div>
-              )}
-            </div>
-<div className="flex gap-2">
+            <div className="flex gap-2">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
               <button onClick={agregar} className="flex-1 bg-rose-500 text-white py-2 rounded-xl text-sm font-semibold">Guardar</button>
             </div>
@@ -1388,9 +1227,7 @@ function Egresos({ egresos, setEgresos, rol }) {
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
                 {rol === "admin" && <td className="px-4 py-3 text-center"><button onClick={async () => {
-                  if (!confirm("¿Estás seguro de borrar este egreso?")) return;
-                  const { error } = await supabase.from('egresos').delete().eq('id', e.id);
-                  if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
+                  await supabase.from('egresos').delete().eq('id', e.id);
                   setEgresos(egresos.filter(x => x.id !== e.id));
                 }} className="text-slate-300 hover:text-rose-500 text-lg">🗑</button></td>}
               </tr>
@@ -1599,10 +1436,8 @@ export default function App() {
     setUsuarios(usuariosAdap);
     setPeriodos(periodosAdap);
     setPagos(pagosAdap);
-    const derramasAdap = (dataDerramas || []).map(d => ({ ...d, montoTotal: Number(d.monto_total ?? d.montoTotal ?? 0) }));
-    const egresosAdap = (dataEgresos || []).map(e => ({ ...e, soporte: e.soporte || null }));
-    setDerramas(derramasAdap);
-    setEgresos(egresosAdap);
+    setDerramas(dataDerramas || []);
+    setEgresos(dataEgresos || []);
     setCargando(false);
   };
 
@@ -1704,7 +1539,7 @@ export default function App() {
 
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
-          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} />}
+          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={usuario.rol} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={usuario.rol} />}
