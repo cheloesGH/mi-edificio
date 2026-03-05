@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import { supabaseAdmin } from "./supabaseAdmin";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -292,9 +293,36 @@ function ModalPago({ cuota, onClose, onConfirm }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function Login({ usuarios, onLogin }) {
-  const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState("");
-  const go = () => { const usr = usuarios.find(x => x.user === u.trim() && x.pass === p.trim() && x.activo); if (usr) onLogin(usr); else setErr("Usuario o contraseña incorrectos"); };
+function Login({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const go = async () => {
+    if (!email || !pass) return setErr("Ingresa tu email y contraseña");
+    setLoading(true); setErr("");
+    try {
+      // 1. Autenticar con Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass.trim() });
+      if (authError) { setErr("Email o contraseña incorrectos"); setLoading(false); return; }
+
+      // 2. Buscar datos del usuario en tabla usuarios
+      const { data: usr, error: usrError } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('auth_id', authData.user.id)
+        .eq('activo', true)
+        .single();
+      if (usrError || !usr) { await supabase.auth.signOut(); setErr("Usuario no encontrado o inactivo"); setLoading(false); return; }
+
+      onLogin({ ...usr, user: usr.usuario, deptos: usr.deptos || [], modulos: usr.modulos || [], permisos: usr.permisos || {} });
+    } catch (e) {
+      setErr("Error de conexión");
+    }
+    setLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8">
@@ -304,10 +332,12 @@ function Login({ usuarios, onLogin }) {
           <p className="text-slate-400 text-sm">Sistema de Administración v3.1</p>
         </div>
         <div className="space-y-3">
-          <input value={u} onChange={e => setU(e.target.value)} placeholder="Usuario" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
-          <input type="password" value={p} onChange={e => setP(e.target.value)} placeholder="Contraseña" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
+          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
+          <input type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="Contraseña" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
           {err && <p className="text-rose-500 text-sm text-center">{err}</p>}
-          <button onClick={go} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">Ingresar</button>
+          <button onClick={go} disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-60">
+            {loading ? "Ingresando..." : "Ingresar"}
+          </button>
         </div>
         <p className="mt-5 text-center text-xs text-slate-400">Contacta al administrador si olvidaste tu contraseña</p>
       </div>
@@ -1728,7 +1758,7 @@ const guardar = async () => {
 }
 
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
-function Derramas({ derramas, setDerramas, deptos, rol }) {
+function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y });
   const crear = async () => {
@@ -1795,7 +1825,7 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
 
 
 // ─── OTROS INGRESOS ──────────────────────────────────────────────────────────
-function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [] }) {
+function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false }) {
   const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
@@ -1933,7 +1963,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
               <th className="px-3 py-3 text-left hidden lg:table-cell">Fecha</th>
               <th className="px-3 py-3 text-right">Monto</th>
               <th className="px-3 py-3 text-center">🧾</th>
-              {rol !== "lectura" && <th className="px-3 py-3 text-center">Acc.</th>}
+              {canDelete && <th className="px-3 py-3 text-center">Acc.</th>}
             </tr>
           </thead>
           <tbody>
@@ -1956,7 +1986,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
                 <td className="px-3 py-2.5 text-center">
                   <button onClick={() => setComprobante(i)} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button>
                 </td>
-                {rol !== "lectura" && (
+                {canDelete && (
                   <td className="px-3 py-2.5 text-center">
                     <button onClick={() => eliminar(i.id)} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg" title="Eliminar">🗑</button>
                   </td>
@@ -2094,7 +2124,7 @@ function ComprobanteOI({ ingreso, onClose }) {
 }
 
 // ─── EGRESOS ──────────────────────────────────────────────────────────────────
-function Egresos({ egresos, setEgresos, rol, periodos = [] }) {
+function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false }) {
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
   const [showNew, setShowNew] = useState(false);
@@ -2201,7 +2231,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [] }) {
               <th className="px-4 py-3 text-left hidden md:table-cell">Categoría</th>
               <th className="px-4 py-3 text-left hidden md:table-cell">Fecha</th>
               <th className="px-4 py-3 text-right">Monto</th>
-              {rol !== "lectura" && <th className="px-4 py-3 text-center">Acc.</th>}
+              {canDelete && <th className="px-4 py-3 text-center">Acc.</th>}
             </tr>
           </thead>
           <tbody>
@@ -2211,7 +2241,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [] }) {
                 <td className="px-4 py-3 hidden md:table-cell"><span className="bg-slate-100 rounded-full px-2 py-0.5 text-xs">{e.cat}</span></td>
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
-                {rol !== "lectura" && <td className="px-4 py-3 text-center"><button onClick={async () => {
+                {canDelete && <td className="px-4 py-3 text-center"><button onClick={async () => {
                   if (!confirm("¿Estás seguro de borrar este egreso?")) return;
                   const { error } = await supabase.from('egresos').delete().eq('id', e.id);
                   if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
@@ -2260,24 +2290,50 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
   const setNivel = (modId, nivel) => setForm({ ...form, permisos: { ...form.permisos, [modId]: nivel } });
 
   const guardar = async () => {
-    if (!form.nombre || !form.user || !form.pass) return alert("Nombre, usuario y contraseña son obligatorios");
+    if (!form.nombre || !form.email || !form.pass) return alert("Nombre, email y contraseña son obligatorios");
     const payload = {
       nombre: form.nombre, email: form.email, rol: form.rol,
-      usuario: form.user, pass: form.pass, deptos: form.deptos, activo: form.activo,
+      usuario: form.user || form.email, pass: form.pass,
+      deptos: form.deptos, activo: form.activo,
       modulos: form.rol === "colaborador" ? form.modulos : [],
       permisos: form.rol === "colaborador" ? form.permisos : {},
     };
     if (editId) {
+      // Actualizar en tabla usuarios
       const { error } = await supabase.from('usuarios').update(payload).eq('id', editId);
       if (error) { alert("Error al actualizar: " + error.message); return; }
-      setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...form, user: form.user } : u));
-      if (editId === usuarioActivo?.id) setUsuario({ ...usuarioActivo, ...form });
+      // Si cambió la contraseña, actualizar en Supabase Auth
+      const uActual = usuarios.find(u => u.id === editId);
+      if (uActual?.auth_id && form.pass !== uActual.pass) {
+        await supabaseAdmin.auth.admin.updateUserById(uActual.auth_id, { password: form.pass });
+      }
+      setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...payload, user: payload.usuario } : u));
+      if (editId === usuarioActivo?.id) setUsuario({ ...usuarioActivo, ...payload, user: payload.usuario });
     } else {
-      const { data, error } = await supabase.from('usuarios').insert(payload).select().single();
-      if (error) { alert("Error al crear usuario: " + error.message); return; }
+      // 1. Crear en Supabase Auth
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: form.email, password: form.pass, email_confirm: true
+      });
+      if (authError) { alert("Error al crear usuario en Auth: " + authError.message); return; }
+      // 2. Crear en tabla usuarios con auth_id
+      const { data, error } = await supabase.from('usuarios').insert({ ...payload, auth_id: authData.user.id }).select().single();
+      if (error) {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id); // revertir
+        alert("Error al crear usuario: " + error.message); return;
+      }
       setUsuarios([...usuarios, { ...data, user: data.usuario, deptos: data.deptos || [], modulos: data.modulos || [], permisos: data.permisos || {} }]);
     }
     setShowNew(false);
+  };
+
+  const eliminar = async (u) => {
+    if (!confirm(`¿Eliminar al usuario ${u.nombre}? Esta acción no se puede deshacer.`)) return;
+    // 1. Eliminar de tabla usuarios
+    const { error } = await supabase.from('usuarios').delete().eq('id', u.id);
+    if (error) { alert("Error al eliminar: " + error.message); return; }
+    // 2. Eliminar de Supabase Auth
+    if (u.auth_id) await supabaseAdmin.auth.admin.deleteUser(u.auth_id);
+    setUsuarios(usuarios.filter(x => x.id !== u.id));
   };
 
   const toggleDepto = id => setForm({ ...form, deptos: form.deptos.includes(id) ? form.deptos.filter(x => x !== id) : [...form.deptos, id] });
@@ -2335,10 +2391,13 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                         {tiene && (
                           <div className="flex gap-1">
                             <button onClick={() => setNivel(m.id, "lectura")} className={`text-xs px-2 py-1 rounded-lg border transition font-medium ${nivel === "lectura" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"}`}>
-                              👁 Solo leer
+                              👁 Ver
                             </button>
                             <button onClick={() => setNivel(m.id, "escritura")} className={`text-xs px-2 py-1 rounded-lg border transition font-medium ${nivel === "escritura" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"}`}>
                               ✏️ Editar
+                            </button>
+                            <button onClick={() => setNivel(m.id, "admin")} className={`text-xs px-2 py-1 rounded-lg border transition font-medium ${nivel === "admin" ? "bg-rose-100 text-rose-700 border-rose-200" : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"}`}>
+                              🗑 Eliminar
                             </button>
                           </div>
                         )}
@@ -2346,7 +2405,7 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                     );
                   })}
                 </div>
-                <p className="text-xs text-slate-400">👁 Solo leer: puede ver pero no modificar · ✏️ Editar: acceso completo</p>
+                <p className="text-xs text-slate-400">👁 Ver: solo lectura · ✏️ Editar: crear y modificar · 🗑 Eliminar: acceso total</p>
               </div>
             )}
 
@@ -2395,8 +2454,8 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                           const m = MODULOS_DISPONIBLES.find(x => x.id === mid);
                           const nivel = u.permisos?.[mid] || "lectura";
                           return m ? (
-                            <span key={mid} className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${nivel === "escritura" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                              {m.icon} {m.label} {nivel === "escritura" ? "✏️" : "👁"}
+                            <span key={mid} className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${nivel === "admin" ? "bg-rose-100 text-rose-700" : nivel === "escritura" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                              {m.icon} {m.label} {nivel === "admin" ? "🗑" : nivel === "escritura" ? "✏️" : "👁"}
                             </span>
                           ) : null;
                         })}
@@ -2407,7 +2466,8 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${ROL_COLORS[u.rol] || "bg-slate-100 text-slate-600"}`}>{ROL_LABELS[u.rol] || u.rol}</span>
                     {!u.activo && <span className="text-xs bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Inactivo</span>}
                     <button onClick={() => simEmail(u)} className="text-slate-300 hover:text-indigo-500 text-lg" title="Simular correo">📧</button>
-                    {rol === "admin" && <button onClick={() => abrir(u)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all text-lg">✏️</button>}
+                    {rol === "admin" && <button onClick={() => abrir(u)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all text-lg" title="Editar">✏️</button>}
+                    {rol === "admin" && u.id !== usuarioActivo?.id && <button onClick={() => eliminar(u)} className="text-slate-300 hover:text-rose-500 hover:scale-125 transition-all text-lg" title="Eliminar usuario">🗑</button>}
                   </div>
                 </div>
               ))}
@@ -2499,8 +2559,8 @@ const PERMS = {
 };
 // Nivel de acceso por módulo: "escritura" | "lectura"
 const PERMS_NIVEL_DEFAULT = {
-  admin:       { dashboard:"escritura", periodos:"escritura", pagos:"escritura", propiedades:"escritura", derramas:"escritura", egresos:"escritura", otros_ingresos:"escritura", usuarios:"escritura" },
-  tesorero:    { dashboard:"lectura",   pagos:"escritura",    derramas:"escritura", egresos:"escritura",   otros_ingresos:"escritura" },
+  admin:       { dashboard:"admin", periodos:"admin", pagos:"admin", propiedades:"admin", derramas:"admin", egresos:"admin", otros_ingresos:"admin", usuarios:"admin" },
+  tesorero:    { dashboard:"lectura", pagos:"escritura", derramas:"escritura", egresos:"escritura", otros_ingresos:"escritura" },
   colaborador: { dashboard:"lectura" },
   prop:        { portal:"lectura" },
 };
@@ -2524,7 +2584,18 @@ export default function App() {
   const [otrosIngresos, setOtrosIngresos] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => { cargarDatos(); }, []);
+  useEffect(() => {
+    // Restaurar sesión activa al recargar la página
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: usr } = await supabase.from('usuarios').select('*').eq('auth_id', session.user.id).eq('activo', true).single();
+        if (usr) setUsuario({ ...usr, user: usr.usuario, deptos: usr.deptos || [], modulos: usr.modulos || [], permisos: usr.permisos || {} });
+      }
+      await cargarDatos();
+    };
+    init();
+  }, []);
 
   const cargarDatos = async () => {
     setCargando(true);
@@ -2553,8 +2624,8 @@ export default function App() {
     setCargando(false);
   };
 
-  const login = u => { setUsuario(u); setTab(PERMS[u.rol][0]); };
-  const logout = () => setUsuario(null);
+  const login = u => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); };
+  const logout = async () => { await supabase.auth.signOut(); setUsuario(null); };
 
   if (cargando) return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center">
@@ -2565,7 +2636,7 @@ export default function App() {
       </div>
     </div>
   );
-  if (!usuario) return <Login usuarios={usuarios} onLogin={login} />;
+  if (!usuario) return <Login onLogin={login} />;
 
   // Si el usuario tiene módulos personalizados, usarlos; sino usar PERMS por rol
   const tabsIds = (usuario.modulos && usuario.modulos.length > 0)
@@ -2578,7 +2649,8 @@ export default function App() {
     if (usuario.permisos && usuario.permisos[modId]) return usuario.permisos[modId];
     return PERMS_NIVEL_DEFAULT[usuario.rol]?.[modId] || "lectura";
   };
-  const puedeEscribir = (modId) => nivelAcceso(modId) === "escritura";
+  const puedeEscribir = (modId) => ["escritura","admin"].includes(nivelAcceso(modId));
+  const puedeEliminar = (modId) => nivelAcceso(modId) === "admin";
   const rolLabel = usuario.rol === "admin" ? "Administrador" : usuario.rol === "tesorero" ? "Tesorero" : `Prop. ${usuario.deptos?.map(id => deptos.find(d => d.id === id)?.depto).join(", ")}`;
   const initials = usuario.nombre.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const perActual = periodos[periodos.length - 1];
@@ -2664,11 +2736,11 @@ export default function App() {
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
           {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
-          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} />}
-          {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} />}
-          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} periodos={periodos} />}
-          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} periodos={periodos} />}
+          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} />}
+          {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
+          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} />}
+          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} />}
+          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
         </main>
