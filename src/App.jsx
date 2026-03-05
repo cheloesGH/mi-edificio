@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -135,14 +137,35 @@ function Comprobante({ cuota, abono, depto, onClose }) {
     };
   };
 
-  const descargarPDF = () => {
-    const blob = new Blob([htmlComprobante()], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `comprobante-${cuota.depto}-${nro}.html`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const descargarPDF = async () => {
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:480px;height:auto;border:none;visibility:hidden;";
+      document.body.appendChild(iframe);
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(htmlComprobante());
+      iframe.contentDocument.close();
+      await new Promise(r => setTimeout(r, 600));
+      const canvas = await html2canvas(iframe.contentDocument.body, {
+        scale: 2,
+        useCORS: true,
+        width: 480,
+        height: iframe.contentDocument.body.scrollHeight,
+        windowWidth: 480,
+        windowHeight: iframe.contentDocument.body.scrollHeight,
+      });
+      document.body.removeChild(iframe);
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const margin = 10;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      pdf.addImage(imgData, "PNG", margin, margin, imgW, imgH);
+      pdf.save(`comprobante-${cuota.depto}-${nro}.pdf`);
+    } catch (err) {
+      alert("Error al generar PDF: " + err.message);
+    }
   };
 
   const enviarCorreo = () => {
@@ -297,11 +320,412 @@ function Login({ usuarios, onLogin }) {
   );
 }
 
+
+// ─── INFORME FINANCIERO ──────────────────────────────────────────────────────
+function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos, onClose }) {
+  const MESES_FULL = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  // ── Egresos del período
+  const egresosMes = egresos.filter(e => e.mes === per?.mes && e.anio === per?.anio);
+  const totalEgresos = egresosMes.reduce((a, e) => a + e.monto, 0);
+
+  // ── Ingresos del período (pagos pagados o parciales)
+  const pagosMes = pagos.filter(p => p.periodoId === per?.id && p.montoPagado > 0);
+  const totalIngresos = pagosMes.reduce((a, p) => a + p.montoPagado, 0);
+
+  // ── Flujo mes anterior
+  const egresosMesAnt = perAnterior ? egresos.filter(e => e.mes === perAnterior.mes && e.anio === perAnterior.anio).reduce((a, e) => a + e.monto, 0) : 0;
+  const ingresosMesAnt = perAnterior ? pagos.filter(p => p.periodoId === perAnterior.id && p.montoPagado > 0).reduce((a, p) => a + p.montoPagado, 0) : 0;
+  const flujoAnt = ingresosMesAnt - egresosMesAnt;
+  const flujoAct = totalIngresos - totalEgresos;
+
+  const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
+  const getDepto = id => deptos.find(d => d.id === id)?.depto || "-";
+
+  // ── Construir fila de ingreso con adeudos concatenados
+  const filasIngresos = pagosMes.map(p => {
+    const propietario = getNombre(p.deptoId);
+    const depto = getDepto(p.deptoId);
+    const tipoLabel = p.tipo === "ordinario" ? "Ordinaria" : "Derrama";
+    const concepto = `${tipoLabel} · ${MESES_FULL[p.mes] || ""} ${p.anio} · Depto ${depto}`;
+    // Períodos adeudados del mismo propietario
+    const adeudados = pagos
+      .filter(x => x.deptoId === p.deptoId && x.estado !== "pagado" && x.periodoId !== per?.id)
+      .map(x => `${MESES_FULL[x.mes] || ""} ${x.anio}`)
+      .filter((v, i, a) => a.indexOf(v) === i);
+    const adeudaStr = adeudados.length > 0 ? ` | Adeuda: ${adeudados.join(", ")}` : "";
+    return { propietario, monto: p.montoPagado, concepto: concepto + adeudaStr };
+  });
+
+  // ── HTML del informe para imprimir/descargar
+  const htmlInforme = () => {
+    const flujoColor = (v) => v >= 0 ? "#059669" : "#e11d48";
+
+    const filaEgr = egresosMes.length > 0
+      ? egresosMes.map(e => `
+        <tr class="data-row">
+          <td class="c1">${e.concepto}</td>
+          <td class="c2 valor" style="color:#e11d48">${fmt(e.monto)}</td>
+          <td class="c3 detalle">${e.detalle || "-"}</td>
+        </tr>`).join("")
+      : `<tr class="data-row"><td class="c1" style="color:#94a3b8;font-style:italic">Sin egresos registrados</td><td class="c2 valor">-</td><td class="c3 detalle">-</td></tr>`;
+
+    const filaIng = filasIngresos.length > 0
+      ? filasIngresos.map(r => `
+        <tr class="data-row">
+          <td class="c1">${r.propietario}</td>
+          <td class="c2 valor" style="color:#059669">${fmt(r.monto)}</td>
+          <td class="c3 detalle">${r.concepto}</td>
+        </tr>`).join("")
+      : `<tr class="data-row"><td class="c1" style="color:#94a3b8;font-style:italic">Sin ingresos registrados</td><td class="c2 valor">-</td><td class="c3 detalle">-</td></tr>`;
+
+    return `<html><head><title>Informe Financiero - ${per?.nombre}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Arial,sans-serif;padding:28px;color:#1e293b;max-width:960px;margin:auto;font-size:12px}
+      h1{color:#4f46e5;font-size:18px;margin-bottom:2px}
+      .sub{color:#94a3b8;font-size:11px;margin-bottom:20px;margin-top:2px}
+
+      /* Una sola tabla para todo el informe */
+      table{width:100%;border-collapse:collapse;table-layout:fixed}
+      col.c1{width:30%}
+      col.c2{width:18%}
+      col.c3{width:52%}
+
+      /* Celdas con clases de columna para garantizar alineación */
+      td,th{padding:9px 12px;vertical-align:middle;word-wrap:break-word}
+      td.c1,th.c1{width:30%}
+      td.c2,th.c2{width:18%;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+      td.c3,th.c3{width:52%}
+
+      /* Encabezado de sección */
+      tr.section-header td{
+        background:#4f46e5;color:#fff;font-weight:700;
+        font-size:12px;padding:8px 12px;
+        border-top:4px solid #4f46e5;
+      }
+      tr.section-header td.c2{text-align:right}
+
+      /* Encabezado de columnas */
+      tr.col-header th{
+        background:#f1f5f9;color:#64748b;font-weight:600;
+        border-bottom:2px solid #e2e8f0;font-size:11px;
+      }
+      tr.col-header th.c2{text-align:right}
+
+      /* Filas de datos */
+      tr.data-row td{border-bottom:1px solid #f1f5f9;height:34px}
+      tr.data-row:nth-child(even) td{background:#f8fafc}
+      td.valor{text-align:right;white-space:nowrap;font-weight:600}
+      td.detalle{color:#64748b;font-size:11px}
+
+      /* Fila de subtotal */
+      tr.subtotal-row td{
+        font-weight:700;height:36px;
+        border-top:2px solid #e2e8f0;
+        border-bottom:3px solid #e2e8f0;
+        background:#f8fafc;
+      }
+      tr.subtotal-row td.c2{text-align:right;font-size:13px}
+
+      /* Sección resumen */
+      tr.resumen-header td{
+        background:#0f172a;color:#fff;font-weight:700;
+        font-size:12px;padding:8px 12px;
+        border-top:6px solid #0f172a;
+      }
+      tr.resumen-row td{
+        border-bottom:1px solid #f1f5f9;
+        height:34px;color:#475569;
+      }
+      tr.resumen-row td.c2{text-align:right;font-weight:700}
+      tr.resumen-total td{
+        font-weight:800;font-size:14px;
+        border-top:3px solid #0f172a;
+        background:#f1f5f9;height:40px;
+      }
+      tr.resumen-total td.c2{text-align:right}
+
+      .footer{text-align:center;font-size:10px;color:#94a3b8;margin-top:20px;padding-top:12px;border-top:1px solid #f1f5f9}
+      @media print{body{padding:12px}}
+    </style></head><body>
+
+    <h1>🏢 Edificio Central — Informe Financiero</h1>
+    <p class="sub">Período: <strong>${per?.nombre}</strong> &nbsp;·&nbsp; Generado: ${todayStr()}</p>
+
+    <table>
+      <colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>
+
+      <!-- ── SECCIÓN EGRESOS ── -->
+      <tr class="section-header">
+        <td class="c1">📉 EGRESOS — ${per?.nombre}</td>
+        <td class="c2">Valor</td>
+        <td class="c3">Detalle</td>
+      </tr>
+      ${filaEgr}
+      <tr class="subtotal-row">
+        <td class="c1">TOTAL EGRESOS</td>
+        <td class="c2" style="color:#e11d48">${fmt(totalEgresos)}</td>
+        <td class="c3"></td>
+      </tr>
+
+      <!-- ── ESPACIADOR ── -->
+      <tr><td colspan="3" style="height:12px;border:none;background:#fff"></td></tr>
+
+      <!-- ── SECCIÓN INGRESOS ── -->
+      <tr class="section-header">
+        <td class="c1">📈 INGRESOS — ${per?.nombre}</td>
+        <td class="c2">Monto Pagado</td>
+        <td class="c3">Concepto / Adeudos</td>
+      </tr>
+      ${filaIng}
+      <tr class="subtotal-row">
+        <td class="c1">TOTAL INGRESOS</td>
+        <td class="c2" style="color:#059669">${fmt(totalIngresos)}</td>
+        <td class="c3"></td>
+      </tr>
+
+      <!-- ── ESPACIADOR ── -->
+      <tr><td colspan="3" style="height:12px;border:none;background:#fff"></td></tr>
+
+      <!-- ── RESUMEN FINANCIERO ── -->
+      <tr class="resumen-header">
+        <td class="c1">📊 RESUMEN FINANCIERO</td>
+        <td class="c2"></td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-row">
+        <td class="c1">Total Egresos ${per?.nombre}</td>
+        <td class="c2" style="color:#e11d48">${fmt(totalEgresos)}</td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-row">
+        <td class="c1">Total Ingresos ${per?.nombre}</td>
+        <td class="c2" style="color:#059669">${fmt(totalIngresos)}</td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-row">
+        <td class="c1">Flujo neto mes anterior ${perAnterior ? "("+perAnterior.nombre+")" : ""}</td>
+        <td class="c2" style="color:${flujoColor(flujoAnt)}">${flujoAnt >= 0 ? "+" : ""}${fmt(flujoAnt)}</td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-total">
+        <td class="c1">FLUJO NETO ${per?.nombre?.toUpperCase()}</td>
+        <td class="c2" style="color:${flujoColor(flujoAct)}">${flujoAct >= 0 ? "+" : ""}${fmt(flujoAct)}</td>
+        <td class="c3"></td>
+      </tr>
+
+    </table>
+
+    <p class="footer">Informe generado automáticamente · Edificio Central · ${todayStr()}</p>
+    </body></html>`;
+  };
+
+  const imprimir = () => {
+    const blob = new Blob([htmlInforme()], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 2000);
+    };
+  };
+
+  const descargar = async () => {
+    try {
+      // Renderizar el HTML puro del informe en un iframe aislado (sin Tailwind/oklch)
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:960px;height:auto;border:none;visibility:hidden;";
+      document.body.appendChild(iframe);
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(htmlInforme());
+      iframe.contentDocument.close();
+      await new Promise(r => setTimeout(r, 800));
+      const canvas = await html2canvas(iframe.contentDocument.body, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        width: 960,
+        height: iframe.contentDocument.body.scrollHeight,
+        windowWidth: 960,
+        windowHeight: iframe.contentDocument.body.scrollHeight,
+      });
+      document.body.removeChild(iframe);
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      let heightLeft = imgH;
+      let yPos = margin;
+      pdf.addImage(imgData, "PNG", margin, yPos, imgW, imgH);
+      heightLeft -= pageH - margin * 2;
+      while (heightLeft > 0) {
+        yPos = heightLeft - imgH + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, yPos, imgW, imgH);
+        heightLeft -= pageH - margin * 2;
+      }
+      pdf.save(`informe-${per?.nombre?.replace(" ", "-") || "financiero"}.pdf`);
+    } catch (err) {
+      alert("Error al generar PDF: " + err.message);
+    }
+  };
+
+  const enviarCorreo = () => {
+    const lineas = [
+      `Informe Financiero - Edificio Central`,
+      `Período: ${per?.nombre}`,
+      ``,
+      `── EGRESOS ──`,
+      ...egresosMes.map(e => `${e.concepto}: ${fmt(e.monto)}${e.detalle ? " | " + e.detalle : ""}`),
+      `TOTAL EGRESOS: ${fmt(totalEgresos)}`,
+      ``,
+      `── INGRESOS ──`,
+      ...filasIngresos.map(r => `${r.propietario}: ${fmt(r.monto)} | ${r.concepto}`),
+      `TOTAL INGRESOS: ${fmt(totalIngresos)}`,
+      ``,
+      `── RESUMEN ──`,
+      `Flujo mes anterior (${perAnterior?.nombre || "-"}): ${flujoAnt >= 0 ? "+" : ""}${fmt(flujoAnt)}`,
+      `Flujo mes actual (${per?.nombre}): ${flujoAct >= 0 ? "+" : ""}${fmt(flujoAct)}`,
+    ].join("%0D%0A");
+    window.open(`mailto:?subject=Informe Financiero ${per?.nombre} - Edificio Central&body=${lineas}`);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-start p-6 border-b border-slate-100">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">📋 Informe Financiero</h2>
+            <p className="text-sm text-slate-400 mt-0.5">Período: <span className="font-semibold text-indigo-600">{per?.nombre}</span></p>
+          </div>
+          <button onClick={onClose} className="text-slate-300 hover:text-slate-500 text-2xl leading-none">✕</button>
+        </div>
+
+        {/* Body scrollable */}
+        <div id="informe-content" className="overflow-y-auto flex-1 p-6 space-y-6">
+
+          {/* ── Egresos ── */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <span className="bg-rose-100 text-rose-600 px-2 py-0.5 rounded-lg">📉 Egresos</span>
+              <span className="text-slate-400 font-normal">{per?.nombre}</span>
+            </h3>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Concepto</th>
+                    <th className="px-3 py-2.5 text-right">Valor</th>
+                    <th className="px-3 py-2.5 text-left hidden md:table-cell">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {egresosMes.length === 0 && <tr><td colSpan={3} className="px-3 py-6 text-center text-slate-400">Sin egresos registrados</td></tr>}
+                  {egresosMes.map((e, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2.5 font-medium text-slate-700">{e.concepto}</td>
+                      <td className="px-3 py-2.5 text-right font-bold text-rose-600">{fmt(e.monto)}</td>
+                      <td className="px-3 py-2.5 text-slate-400 text-xs hidden md:table-cell">{e.detalle || "-"}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-slate-200 bg-slate-50">
+                    <td className="px-3 py-2.5 font-bold text-slate-700">TOTAL EGRESOS</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-rose-600 text-base">{fmt(totalEgresos)}</td>
+                    <td className="hidden md:table-cell" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Ingresos ── */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <span className="bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-lg">📈 Ingresos</span>
+              <span className="text-slate-400 font-normal">{per?.nombre}</span>
+            </h3>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Propietario</th>
+                    <th className="px-3 py-2.5 text-right">Monto Pagado</th>
+                    <th className="px-3 py-2.5 text-left hidden md:table-cell">Concepto / Adeudos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filasIngresos.length === 0 && <tr><td colSpan={3} className="px-3 py-6 text-center text-slate-400">Sin ingresos registrados</td></tr>}
+                  {filasIngresos.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2.5 font-medium text-slate-700">{r.propietario}</td>
+                      <td className="px-3 py-2.5 text-right font-bold text-emerald-600">{fmt(r.monto)}</td>
+                      <td className="px-3 py-2.5 text-slate-400 text-xs hidden md:table-cell">{r.concepto}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-slate-200 bg-slate-50">
+                    <td className="px-3 py-2.5 font-bold text-slate-700">TOTAL INGRESOS</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-emerald-600 text-base">{fmt(totalIngresos)}</td>
+                    <td className="hidden md:table-cell" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Resumen flujo ── */}
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-3">
+            <h3 className="text-sm font-bold text-slate-700 mb-1">📊 Resumen Financiero</h3>
+            <div className="flex justify-between text-sm py-2 border-b border-slate-200">
+              <span className="text-slate-500">Total Egresos {per?.nombre}</span>
+              <span className="font-bold text-rose-600">{fmt(totalEgresos)}</span>
+            </div>
+            <div className="flex justify-between text-sm py-2 border-b border-slate-200">
+              <span className="text-slate-500">Total Ingresos {per?.nombre}</span>
+              <span className="font-bold text-emerald-600">{fmt(totalIngresos)}</span>
+            </div>
+            <div className="flex justify-between text-sm py-2 border-b border-slate-200">
+              <span className="text-slate-500">Flujo neto mes anterior {perAnterior ? `(${perAnterior.nombre})` : ""}</span>
+              <span className={`font-bold ${flujoAnt >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{flujoAnt >= 0 ? "+" : ""}{fmt(flujoAnt)}</span>
+            </div>
+            <div className="flex justify-between text-base py-2 font-bold border-t-2 border-slate-300">
+              <span className="text-slate-700">Flujo Neto {per?.nombre}</span>
+              <span className={flujoAct >= 0 ? "text-emerald-600" : "text-rose-600"}>{flujoAct >= 0 ? "+" : ""}{fmt(flujoAct)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer con botones */}
+        <div className="p-6 border-t border-slate-100 grid grid-cols-3 gap-2">
+          <button onClick={imprimir} className="flex flex-col items-center gap-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 py-2.5 rounded-xl text-xs font-semibold text-slate-600 transition">
+            <span className="text-lg">🖨️</span>Imprimir
+          </button>
+          <button onClick={descargar} className="flex flex-col items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2.5 rounded-xl text-xs font-semibold text-rose-600 transition" title="Se abrirá el diálogo de impresión. Selecciona Guardar como PDF">
+            <span className="text-lg">📄</span>Guardar PDF
+          </button>
+          <button onClick={enviarCorreo} className="flex flex-col items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 py-2.5 rounded-xl text-xs font-semibold text-indigo-600 transition">
+            <span className="text-lg">📧</span>Enviar correo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
+  const [showInforme, setShowInforme] = useState(false);
 
     const ult3 = periodos.slice(-3).reverse();
 const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.length - 1];
@@ -333,7 +757,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
     { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: "egresos" },
     { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes" },
     { l: "En Mora", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos" },
-    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo" },
+    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo", informe: true },
     { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: "derramas_nav" },
   ];
 
@@ -481,6 +905,18 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
         </div>
       </div>
 
+      {/* ── Informe Financiero ── */}
+      {showInforme && (
+        <InformeFinanciero
+          per={per}
+          perAnterior={periodos[periodos.findIndex(p => p.id === per?.id) - 1] || null}
+          egresos={egresos}
+          pagos={pagos}
+          usuarios={usuarios}
+          deptos={deptos}
+          onClose={() => setShowInforme(false)}
+        />
+      )}
       {/* ── Tarjetas métricas ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {cards.map(c => (
@@ -491,6 +927,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{c.l}</p>
               <p className="text-xl lg:text-2xl font-bold text-slate-800 mt-1.5 truncate">{c.v}</p>
               {c.key && <p className="text-xs text-indigo-500 mt-1.5 font-medium hidden sm:block">Clic para ver detalle</p>}
+              {c.informe && <button onClick={e => { e.stopPropagation(); setShowInforme(true); }} className="text-xs text-indigo-500 hover:underline mt-1 font-semibold hidden sm:block">📋 Ver informe →</button>}
             </div>
             <div className={`w-10 h-10 lg:w-11 lg:h-11 rounded-xl flex items-center justify-center text-lg flex-shrink-0 shadow-lg ${c.iconBg}`}>
               {c.icon}
@@ -1275,7 +1712,7 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
 function Egresos({ egresos, setEgresos, rol }) {
   const [filters, setFilters] = useState({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", soporte: null });
+  const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   const CATS = ["Mantenimiento", "Servicios", "Personal", "Administrativo", "Imprevistos"];
   const filterConfig = [
     { key: "mes", label: "Mes", type: "select", options: MESES.map((m, i) => ({ value: String(i), label: m })), placeholder: "Todos los meses" },
@@ -1298,12 +1735,12 @@ function Egresos({ egresos, setEgresos, rol }) {
     const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
     const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
-    const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha, soporte: form.soporte || null };
+    const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha, detalle: form.detalle || null, soporte: form.soporte || null };
     const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
     if (error) { alert("Error al guardar egreso: " + error.message); return; }
     setEgresos([...egresos, data]);
     setShowNew(false);
-    setForm({ concepto: "", cat: "Mantenimiento", monto: "", soporte: null });
+    setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   };
   const clearFilters = () => setFilters({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
   return (
@@ -1321,6 +1758,7 @@ function Egresos({ egresos, setEgresos, rol }) {
             <h3 className="font-bold text-lg">Nuevo Egreso</h3>
             <div><label className="text-xs text-slate-500 mb-1 block">Concepto</label><input value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Monto ($)</label><input type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Detalle adicional <span className="text-slate-300">(opcional)</span></label><input value={form.detalle} onChange={e => setForm({ ...form, detalle: e.target.value })} placeholder="Ej: N° factura, proveedor, observaciones..." className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Categoría</label>
               <select value={form.cat} onChange={e => setForm({ ...form, cat: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
                 {CATS.map(c => <option key={c}>{c}</option>)}
@@ -1392,7 +1830,7 @@ function Egresos({ egresos, setEgresos, rol }) {
                   const { error } = await supabase.from('egresos').delete().eq('id', e.id);
                   if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
                   setEgresos(egresos.filter(x => x.id !== e.id));
-                }} className="text-slate-300 hover:text-rose-500 text-lg">🗑</button></td>}
+                }} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg" title="Eliminar egreso">🗑</button></td>}
               </tr>
             ))}
             {filtrados.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Sin resultados para los filtros aplicados</td></tr>}
