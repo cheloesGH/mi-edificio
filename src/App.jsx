@@ -309,12 +309,7 @@ function Login({ usuarios, onLogin }) {
           {err && <p className="text-rose-500 text-sm text-center">{err}</p>}
           <button onClick={go} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700">Ingresar</button>
         </div>
-        <div className="mt-5 p-3 bg-slate-50 rounded-xl text-xs text-slate-500 space-y-1">
-          <p className="font-semibold text-slate-600">Accesos demo:</p>
-          <p>Admin: <span className="font-mono text-indigo-600">admin / admin123</span></p>
-          <p>Tesorero: <span className="font-mono text-indigo-600">tesorero / tes123</span></p>
-          <p>Propietario: <span className="font-mono text-indigo-600">prop1 / prop1</span></p>
-        </div>
+        <p className="mt-5 text-center text-xs text-slate-400">Contacta al administrador si olvidaste tu contraseña</p>
       </div>
     </div>
   );
@@ -322,7 +317,7 @@ function Login({ usuarios, onLogin }) {
 
 
 // ─── INFORME FINANCIERO ──────────────────────────────────────────────────────
-function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos, onClose }) {
+function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos, onClose, otrosIngresos = [] }) {
   const MESES_FULL = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   // ── Egresos del período
@@ -331,12 +326,18 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
 
   // ── Ingresos del período (pagos pagados o parciales)
   const pagosMes = pagos.filter(p => p.periodoId === per?.id && p.montoPagado > 0);
-  const totalIngresos = pagosMes.reduce((a, p) => a + p.montoPagado, 0);
+  const totalCuotas = pagosMes.reduce((a, p) => a + p.montoPagado, 0);
+
+  // ── Otros ingresos del período
+  const otrosMes = otrosIngresos.filter(o => o.mes === per?.mes && o.anio === per?.anio);
+  const totalOtros = otrosMes.reduce((a, o) => a + o.monto, 0);
+  const totalIngresos = totalCuotas + totalOtros;
 
   // ── Flujo mes anterior
   const egresosMesAnt = perAnterior ? egresos.filter(e => e.mes === perAnterior.mes && e.anio === perAnterior.anio).reduce((a, e) => a + e.monto, 0) : 0;
   const ingresosMesAnt = perAnterior ? pagos.filter(p => p.periodoId === perAnterior.id && p.montoPagado > 0).reduce((a, p) => a + p.montoPagado, 0) : 0;
-  const flujoAnt = ingresosMesAnt - egresosMesAnt;
+  const otrosAnt = perAnterior ? otrosIngresos.filter(o => o.mes === perAnterior.mes && o.anio === perAnterior.anio).reduce((a, o) => a + o.monto, 0) : 0;
+  const flujoAnt = (ingresosMesAnt + otrosAnt) - egresosMesAnt;
   const flujoAct = totalIngresos - totalEgresos;
 
   const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
@@ -378,6 +379,15 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
           <td class="c3 detalle">${r.concepto}</td>
         </tr>`).join("")
       : `<tr class="data-row"><td class="c1" style="color:#94a3b8;font-style:italic">Sin ingresos registrados</td><td class="c2 valor">-</td><td class="c3 detalle">-</td></tr>`;
+
+    const filaOtros = otrosMes.length > 0
+      ? otrosMes.map(o => `
+        <tr class="data-row">
+          <td class="c1">${o.pagador_nombre} <span style="color:#94a3b8;font-size:10px">(${o.pagador_tipo === "propietario" ? "prop." : "externo"})</span></td>
+          <td class="c2 valor" style="color:#059669">${fmt(o.monto)}</td>
+          <td class="c3 detalle">${o.concepto}${o.detalle ? " · " + o.detalle : ""}</td>
+        </tr>`).join("")
+      : `<tr class="data-row"><td class="c1" style="color:#94a3b8;font-style:italic">Sin otros ingresos</td><td class="c2 valor">-</td><td class="c3 detalle">-</td></tr>`;
 
     return `<html><head><title>Informe Financiero - ${per?.nombre}</title>
     <style>
@@ -472,16 +482,32 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
       <!-- ── ESPACIADOR ── -->
       <tr><td colspan="3" style="height:12px;border:none;background:#fff"></td></tr>
 
-      <!-- ── SECCIÓN INGRESOS ── -->
+      <!-- ── SECCIÓN INGRESOS CUOTAS ── -->
       <tr class="section-header">
-        <td class="c1">📈 INGRESOS — ${per?.nombre}</td>
+        <td class="c1">📈 INGRESOS CUOTAS — ${per?.nombre}</td>
         <td class="c2">Monto Pagado</td>
         <td class="c3">Concepto / Adeudos</td>
       </tr>
       ${filaIng}
       <tr class="subtotal-row">
-        <td class="c1">TOTAL INGRESOS</td>
-        <td class="c2" style="color:#059669">${fmt(totalIngresos)}</td>
+        <td class="c1">SUBTOTAL CUOTAS</td>
+        <td class="c2" style="color:#059669">${fmt(totalCuotas)}</td>
+        <td class="c3"></td>
+      </tr>
+
+      <!-- ── ESPACIADOR ── -->
+      <tr><td colspan="3" style="height:12px;border:none;background:#fff"></td></tr>
+
+      <!-- ── SECCIÓN OTROS INGRESOS ── -->
+      <tr class="section-header">
+        <td class="c1">💰 OTROS INGRESOS — ${per?.nombre}</td>
+        <td class="c2">Monto</td>
+        <td class="c3">Concepto / Detalle</td>
+      </tr>
+      ${filaOtros}
+      <tr class="subtotal-row">
+        <td class="c1">SUBTOTAL OTROS INGRESOS</td>
+        <td class="c2" style="color:#059669">${fmt(totalOtros)}</td>
         <td class="c3"></td>
       </tr>
 
@@ -500,7 +526,17 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
         <td class="c3"></td>
       </tr>
       <tr class="resumen-row">
-        <td class="c1">Total Ingresos ${per?.nombre}</td>
+        <td class="c1">Ingresos cuotas ${per?.nombre}</td>
+        <td class="c2" style="color:#059669">${fmt(totalCuotas)}</td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-row">
+        <td class="c1">Otros ingresos ${per?.nombre}</td>
+        <td class="c2" style="color:#059669">${fmt(totalOtros)}</td>
+        <td class="c3"></td>
+      </tr>
+      <tr class="resumen-row" style="font-weight:700">
+        <td class="c1">TOTAL INGRESOS ${per?.nombre}</td>
         <td class="c2" style="color:#059669">${fmt(totalIngresos)}</td>
         <td class="c3"></td>
       </tr>
@@ -647,10 +683,10 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
             </div>
           </div>
 
-          {/* ── Ingresos ── */}
+          {/* ── Ingresos Cuotas ── */}
           <div>
             <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-              <span className="bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-lg">📈 Ingresos</span>
+              <span className="bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-lg">📈 Ingresos Cuotas</span>
               <span className="text-slate-400 font-normal">{per?.nombre}</span>
             </h3>
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -672,8 +708,42 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
                     </tr>
                   ))}
                   <tr className="border-t-2 border-slate-200 bg-slate-50">
-                    <td className="px-3 py-2.5 font-bold text-slate-700">TOTAL INGRESOS</td>
-                    <td className="px-3 py-2.5 text-right font-bold text-emerald-600 text-base">{fmt(totalIngresos)}</td>
+                    <td className="px-3 py-2.5 font-bold text-slate-700">SUBTOTAL CUOTAS</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-emerald-600 text-base">{fmt(totalCuotas)}</td>
+                    <td className="hidden md:table-cell" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Otros Ingresos ── */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <span className="bg-teal-100 text-teal-600 px-2 py-0.5 rounded-lg">💰 Otros Ingresos</span>
+              <span className="text-slate-400 font-normal">{per?.nombre}</span>
+            </h3>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Pagador</th>
+                    <th className="px-3 py-2.5 text-right">Monto</th>
+                    <th className="px-3 py-2.5 text-left hidden md:table-cell">Concepto / Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {otrosMes.length === 0 && <tr><td colSpan={3} className="px-3 py-6 text-center text-slate-400">Sin otros ingresos registrados</td></tr>}
+                  {otrosMes.map((o, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2.5 font-medium text-slate-700">{o.pagador_nombre}<span className="text-xs text-slate-400 ml-1">({o.pagador_tipo === "propietario" ? "prop." : "ext."})</span></td>
+                      <td className="px-3 py-2.5 text-right font-bold text-emerald-600">{fmt(o.monto)}</td>
+                      <td className="px-3 py-2.5 text-slate-400 text-xs hidden md:table-cell">{o.concepto}{o.detalle ? ` · ${o.detalle}` : ""}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-slate-200 bg-slate-50">
+                    <td className="px-3 py-2.5 font-bold text-slate-700">SUBTOTAL OTROS</td>
+                    <td className="px-3 py-2.5 text-right font-bold text-emerald-600 text-base">{fmt(totalOtros)}</td>
                     <td className="hidden md:table-cell" />
                   </tr>
                 </tbody>
@@ -689,8 +759,16 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
               <span className="font-bold text-rose-600">{fmt(totalEgresos)}</span>
             </div>
             <div className="flex justify-between text-sm py-2 border-b border-slate-200">
-              <span className="text-slate-500">Total Ingresos {per?.nombre}</span>
-              <span className="font-bold text-emerald-600">{fmt(totalIngresos)}</span>
+              <span className="text-slate-500">Ingresos cuotas {per?.nombre}</span>
+              <span className="font-bold text-emerald-600">{fmt(totalCuotas)}</span>
+            </div>
+            <div className="flex justify-between text-sm py-2 border-b border-slate-200">
+              <span className="text-slate-500">Otros ingresos {per?.nombre}</span>
+              <span className="font-bold text-emerald-600">{fmt(totalOtros)}</span>
+            </div>
+            <div className="flex justify-between text-sm py-2 border-b border-slate-200 font-semibold">
+              <span className="text-slate-700">Total Ingresos {per?.nombre}</span>
+              <span className="text-emerald-600">{fmt(totalIngresos)}</span>
             </div>
             <div className="flex justify-between text-sm py-2 border-b border-slate-200">
               <span className="text-slate-500">Flujo neto mes anterior {perAnterior ? `(${perAnterior.nombre})` : ""}</span>
@@ -721,7 +799,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab }) {
+function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab, otrosIngresos = [] }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
@@ -734,6 +812,8 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const ingMes = cuotas.filter(p => p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
   const pendMes = cuotas.filter(p => p.estado !== "pagado").reduce((a, p) => a + Math.max(0, p.montoTotal - p.montoPagado), 0);
   const egrMes = egresos.filter(e => e.mes === per?.mes && e.anio === per?.anio).reduce((a, e) => a + e.monto, 0);
+  const otrosMes = otrosIngresos.filter(o => o.mes === per?.mes && o.anio === per?.anio).reduce((a, o) => a + o.monto, 0);
+  const ingTotal = ingMes + otrosMes;
   const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
   const morososList = cuotas.filter(p => p.estado !== "pagado").map(p => ({ ...p, propietario: getNombre(p.deptoId), saldo: parseFloat((p.montoTotal - p.montoPagado).toFixed(2)) }));
   const pagosCobrados = cuotas.filter(p => p.estado === "pagado");
@@ -753,17 +833,19 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const pct = ingMes + pendMes > 0 ? ((ingMes / (ingMes + pendMes)) * 100).toFixed(1) : 0;
 
   const cards = [
-    { l: "Ingresos", v: fmt(ingMes), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos" },
+    { l: "Ingresos", v: fmt(ingTotal), icon: "📈", iconBg: "bg-emerald-500", key: "ingresos", sub1: ingMes > 0 ? `Cuotas ${fmt(ingMes)}` : null, sub2: otrosMes > 0 ? `Otros ${fmt(otrosMes)}` : null },
     { l: "Egresos", v: fmt(egrMes), icon: "📉", iconBg: "bg-rose-500", key: "egresos" },
     { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes" },
     { l: "En Mora", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos" },
-    { l: "Flujo Neto", v: fmt(ingMes - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo", informe: true },
+    { l: "Flujo Neto", v: fmt(ingTotal - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo", informe: true },
     { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: "derramas_nav" },
   ];
 
   const egresosMes = egresos.filter(e => e.mes === per?.mes && e.anio === per?.anio);
+  const otrosMesRows = otrosIngresos.filter(o => o.mes === per?.mes && o.anio === per?.anio);
   const flujoRows = [
-    ...pagosCobrados.map(r => ({ concepto: `Cuota ${r.depto}`, tipo: "Ingreso", monto: r.montoPagado, _color: "text-emerald-600" })),
+    ...pagosCobrados.map(r => ({ concepto: `Cuota ${r.depto}`, tipo: "Ingreso cuota", monto: r.montoPagado, _color: "text-emerald-600" })),
+    ...otrosMesRows.map(o => ({ concepto: o.concepto, tipo: "Otro ingreso", monto: o.monto, _color: "text-emerald-500" })),
     ...egresosMes.map(e => ({ concepto: e.concepto, tipo: "Egreso", monto: e.monto, _color: "text-rose-600" })),
   ];
   const modalData = {
@@ -771,7 +853,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
     egresos: { title: "Detalle de Egresos", desc: `Gastos registrados en ${per?.nombre}`, rows: egresosMes, totalLabel: "Total egresado", total: egrMes, totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.monto, labelKey: "concepto" },
     pendientes: { title: "Pagos Pendientes", desc: `Saldos por cobrar en ${per?.nombre}`, rows: pagosPendientes, totalLabel: "Total pendiente", total: pendMes, totalColor: "text-amber-600", rowColor: "bg-amber-50", amountColor: "text-amber-600", amount: r => r.montoTotal - r.montoPagado },
     morosos: { title: "Propietarios en Mora", desc: "Departamentos con saldo pendiente", rows: morososList, totalLabel: "Total adeudado", total: morososList.reduce((a, p) => a + p.saldo, 0), totalColor: "text-rose-600", rowColor: "bg-rose-50", amountColor: "text-rose-600", amount: r => r.saldo },
-    flujo: { title: "Detalle Flujo Neto", desc: `Composición del flujo en ${per?.nombre}`, rows: flujoRows, totalLabel: `Flujo neto (${ingMes - egrMes >= 0 ? "+" : ""}${fmt(ingMes - egrMes)})`, total: ingMes - egrMes, totalColor: ingMes - egrMes >= 0 ? "text-emerald-600" : "text-rose-600", rowColor: "bg-slate-50", amountColor: null, amount: r => r.monto, labelKey: "concepto" },
+    flujo: { title: "Detalle Flujo Neto", desc: `Composición del flujo en ${per?.nombre}`, rows: flujoRows, totalLabel: `Flujo neto (${ingTotal - egrMes >= 0 ? "+" : ""}${fmt(ingTotal - egrMes)})`, total: ingTotal - egrMes, totalColor: ingTotal - egrMes >= 0 ? "text-emerald-600" : "text-rose-600", rowColor: "bg-slate-50", amountColor: null, amount: r => r.monto, labelKey: "concepto" },
   };
 
   const fmtK = v => `$${(v / 1000).toFixed(0)}k`;
@@ -915,6 +997,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
           usuarios={usuarios}
           deptos={deptos}
           onClose={() => setShowInforme(false)}
+          otrosIngresos={otrosIngresos}
         />
       )}
       {/* ── Tarjetas métricas ── */}
@@ -926,8 +1009,10 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{c.l}</p>
               <p className="text-xl lg:text-2xl font-bold text-slate-800 mt-1.5 truncate">{c.v}</p>
-              {c.key && <p className="text-xs text-indigo-500 mt-1.5 font-medium hidden sm:block">Clic para ver detalle</p>}
-              {c.informe && <button onClick={e => { e.stopPropagation(); setShowInforme(true); }} className="text-xs text-indigo-500 hover:underline mt-1 font-semibold hidden sm:block">📋 Ver informe →</button>}
+              {c.sub1 && <p className="text-xs text-slate-400 mt-1 leading-tight">{c.sub1}</p>}
+              {c.sub2 && <p className="text-xs text-emerald-500 font-semibold leading-tight">{c.sub2}</p>}
+              {c.key && !c.sub1 && <p className="text-xs text-indigo-500 mt-1.5 font-medium hidden sm:block">Clic para ver detalle</p>}
+              {c.informe && <button onClick={e => { e.stopPropagation(); setShowInforme(true); }} className="text-xs text-indigo-500 hover:underline mt-1 font-semibold">📋 Ver informe →</button>}
             </div>
             <div className={`w-10 h-10 lg:w-11 lg:h-11 rounded-xl flex items-center justify-center text-lg flex-shrink-0 shadow-lg ${c.iconBg}`}>
               {c.icon}
@@ -1277,7 +1362,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   };
   const estadoBadge = p => {
     const saldo = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
-    if (p.estado === "pagado") return <button onClick={() => rol === "admin" && setRevertir(p.id)} className={`px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 ${rol === "admin" ? "hover:bg-rose-100 hover:text-rose-700 transition" : ""}`}>✅ Pagado{rol === "admin" ? " ✎" : ""}</button>;
+    if (p.estado === "pagado") return <button onClick={() => rol !== "lectura" && setRevertir(p.id)} className={`px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 ${rol !== "lectura" ? "hover:bg-rose-100 hover:text-rose-700 transition" : ""}`}>✅ Pagado{rol !== "lectura" ? " ✎" : ""}</button>;
     if (p.estado === "parcial") return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 transition">💧 Parcial · {fmt(saldo)}</button>;
     return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 transition">⏳ Pendiente →</button>;
   };
@@ -1499,7 +1584,7 @@ const guardar = async () => {
             <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center text-2xl font-bold text-indigo-700">{sel.depto}</div>
             <div><h3 className="text-xl font-bold text-slate-800">Propiedad {sel.depto}</h3><p className="text-slate-500 text-sm">Piso {sel.piso} · {sel.m2} m² · Coef. {fmtPct(sel.coef)}</p></div>
           </div>
-          {rol === "admin" && <button onClick={() => { setEdit(!edit); setEd({ depto: sel.depto, piso: sel.piso, m2: sel.m2, tipo: sel.tipo || "departamento", alicuotaFija: sel.alicuotaFija, metodoCalculo: sel.metodoCalculo }); }} className="self-start text-sm border border-indigo-200 px-3 py-1.5 rounded-xl text-indigo-600 hover:bg-indigo-50">✏️ Editar</button>}
+          {rol !== "lectura" && <button onClick={() => { setEdit(!edit); setEd({ depto: sel.depto, piso: sel.piso, m2: sel.m2, tipo: sel.tipo || "departamento", alicuotaFija: sel.alicuotaFija, metodoCalculo: sel.metodoCalculo }); }} className="self-start text-sm border border-indigo-200 px-3 py-1.5 rounded-xl text-indigo-600 hover:bg-indigo-50">✏️ Editar</button>}
         </div>
         <div>
           <p className="text-xs text-slate-500 mb-1 font-semibold">Propietario(s):</p>
@@ -1563,7 +1648,7 @@ const guardar = async () => {
   );
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3"><h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>{rol === "admin" && <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700">+ Nueva Propiedad</button>}</div>
+      <div className="flex items-center justify-between gap-3"><h2 className="text-2xl font-bold text-slate-800">Propiedades</h2>{rol !== "lectura" && <button onClick={() => setShowNew(true)} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm shadow-sm hover:bg-indigo-700">+ Nueva Propiedad</button>}</div>
       
       {showNew && (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -1658,7 +1743,7 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Derramas Extraordinarias</h2>
-        {rol === "admin" && <button onClick={() => setShowNew(true)} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700">+ Nueva Derrama</button>}
+        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700">+ Nueva Derrama</button>}
       </div>
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
@@ -1708,9 +1793,310 @@ function Derramas({ derramas, setDerramas, deptos, rol }) {
   );
 }
 
+
+// ─── OTROS INGRESOS ──────────────────────────────────────────────────────────
+function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [] }) {
+  const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
+  const lastPer = periodos[periodos.length - 1];
+  const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
+  const [showNew, setShowNew] = useState(false);
+  const [comprobante, setComprobante] = useState(null);
+  const [form, setForm] = useState({ concepto: "", cat: "Arriendo Local", monto: "", pagador_nombre: "", pagador_tipo: "externo", pagador_id: null, detalle: "" });
+
+  const filterConfig = [
+    { key: "mes", label: "Mes", type: "select", options: MESES.map((m, i) => ({ value: String(i), label: m })) },
+    { key: "anio", label: "Año", type: "select", options: [{ value: "2025", label: "2025" }, { value: "2026", label: "2026" }] },
+    { key: "cat", label: "Categoría", type: "select", options: CATS_OI.map(c => ({ value: c, label: c })) },
+    { key: "pagador", label: "Pagador", type: "text", placeholder: "Buscar nombre..." },
+  ];
+
+  const filtrados = useMemo(() => otrosIngresos.filter(i => {
+    if (filters.mes !== "todos" && i.mes !== Number(filters.mes)) return false;
+    if (filters.anio !== "todos" && i.anio !== Number(filters.anio)) return false;
+    if (filters.cat !== "todos" && i.cat !== filters.cat) return false;
+    if (filters.pagador && !i.pagador_nombre?.toLowerCase().includes(filters.pagador.toLowerCase())) return false;
+    return true;
+  }), [otrosIngresos, filters]);
+
+  const total = filtrados.reduce((a, i) => a + i.monto, 0);
+
+  const agregar = async () => {
+    if (!form.concepto || !form.monto || !form.pagador_nombre) return alert("Completa concepto, monto y pagador");
+    const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
+    const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
+    const fecha = `${String(today.d).padStart(2,"0")}/${String(mes+1).padStart(2,"0")}/${anio}`;
+    const nuevo = {
+      concepto: form.concepto, categoria: form.cat, monto: Number(form.monto),
+      mes, anio, fecha, pagador_nombre: form.pagador_nombre,
+      pagador_tipo: form.pagador_tipo, pagador_id: form.pagador_id || null,
+      detalle: form.detalle || null
+    };
+    const { data, error } = await supabase.from('otros_ingresos').insert(nuevo).select().single();
+    if (error) { alert("Error al guardar: " + error.message); return; }
+    setOtrosIngresos([...otrosIngresos, { ...data, cat: data.categoria }]);
+    setShowNew(false);
+    setForm({ concepto: "", cat: "Arriendo Local", monto: "", pagador_nombre: "", pagador_tipo: "externo", pagador_id: null, detalle: "" });
+  };
+
+  const eliminar = async (id) => {
+    if (!confirm("¿Eliminar este ingreso?")) return;
+    const { error } = await supabase.from("otros_ingresos").delete().eq("id", id);
+    if (error) { alert("Error al eliminar: " + error.message); return; }
+    setOtrosIngresos(otrosIngresos.filter(i => i.id !== id));
+  };
+
+  const catIcon = c => c === "Arriendo Local" ? "🏪" : c === "Arriendo Parqueadero" ? "🚗" : "📦";
+  const catColor = c => c === "Arriendo Local" ? "bg-blue-100 text-blue-700" : c === "Arriendo Parqueadero" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-700";
+
+  return (
+    <div className="space-y-4">
+      {comprobante && <ComprobanteOI ingreso={comprobante} onClose={() => setComprobante(null)} />}
+      <div className="flex justify-between items-center flex-wrap gap-3">
+        <h2 className="text-2xl font-bold text-slate-800">Otros Ingresos</h2>
+        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600">+ Registrar</button>}
+      </div>
+
+      <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" })} />
+      <ResultCount total={otrosIngresos.length} filtered={filtrados.length} onExport={() => exportCSV(filtrados, [{ key: "concepto", label: "Concepto" }, { key: "categoria", label: "Categoría" }, { key: "monto", label: "Monto" }, { key: "pagador_nombre", label: "Pagador" }, { key: "fecha", label: "Fecha" }], "otros-ingresos.csv")} />
+
+      {/* Resumen */}
+      <div className="grid grid-cols-3 gap-3">
+        {CATS_OI.map(c => {
+          const subtotal = filtrados.filter(i => i.cat === c || i.categoria === c).reduce((a, i) => a + i.monto, 0);
+          return (
+            <div key={c} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-center">
+              <p className="text-xs text-slate-400 mb-1">{catIcon(c)} {c}</p>
+              <p className="text-lg font-bold text-emerald-600">{fmt(subtotal)}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal nuevo */}
+      {showNew && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-lg">Registrar Ingreso</h3>
+            <div><label className="text-xs text-slate-500 mb-1 block">Categoría</label>
+              <select value={form.cat} onChange={e => setForm({ ...form, cat: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                {CATS_OI.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Concepto</label>
+              <input value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} placeholder="Ej: Arriendo local 1, Parqueadero 3..." className="w-full border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            {form.cat === "Otro" && (
+              <div><label className="text-xs text-slate-500 mb-1 block">Detalle <span className="text-slate-300">(opcional)</span></label>
+                <input value={form.detalle} onChange={e => setForm({ ...form, detalle: e.target.value })} placeholder="Describe el ingreso adicional..." className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+            )}
+            <div><label className="text-xs text-slate-500 mb-1 block">Monto ($)</label>
+              <input type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div><label className="text-xs text-slate-500 mb-1 block">Tipo de pagador</label>
+              <select value={form.pagador_tipo} onChange={e => setForm({ ...form, pagador_tipo: e.target.value, pagador_nombre: "", pagador_id: null })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                <option value="externo">Persona externa</option>
+                <option value="propietario">Propietario del edificio</option>
+              </select>
+            </div>
+            {form.pagador_tipo === "propietario" ? (
+              <div><label className="text-xs text-slate-500 mb-1 block">Seleccionar propietario</label>
+                <select value={form.pagador_id || ""} onChange={e => {
+                  const u = usuarios.find(u => u.id === Number(e.target.value));
+                  setForm({ ...form, pagador_id: Number(e.target.value), pagador_nombre: u?.nombre || "" });
+                }} className="w-full border rounded-xl px-3 py-2 text-sm">
+                  <option value="">— Seleccionar —</option>
+                  {usuarios.filter(u => u.rol === "prop").map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div><label className="text-xs text-slate-500 mb-1 block">Nombre del pagador</label>
+                <input value={form.pagador_nombre} onChange={e => setForm({ ...form, pagador_nombre: e.target.value })} placeholder="Nombre completo..." className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={agregar} className="flex-1 bg-emerald-500 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabla */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="px-3 py-3 text-left">Concepto</th>
+              <th className="px-3 py-3 text-left hidden md:table-cell">Categoría</th>
+              <th className="px-3 py-3 text-left hidden md:table-cell">Pagador</th>
+              <th className="px-3 py-3 text-left hidden lg:table-cell">Fecha</th>
+              <th className="px-3 py-3 text-right">Monto</th>
+              <th className="px-3 py-3 text-center">🧾</th>
+              {rol !== "lectura" && <th className="px-3 py-3 text-center">Acc.</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtrados.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Sin ingresos registrados</td></tr>}
+            {filtrados.map(i => (
+              <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50">
+                <td className="px-3 py-2.5 font-medium text-slate-700">
+                  {i.concepto}
+                  {i.detalle && <p className="text-xs text-slate-400">{i.detalle}</p>}
+                </td>
+                <td className="px-3 py-2.5 hidden md:table-cell">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catColor(i.cat || i.categoria)}`}>{catIcon(i.cat || i.categoria)} {i.cat || i.categoria}</span>
+                </td>
+                <td className="px-3 py-2.5 hidden md:table-cell text-slate-500 text-xs">
+                  {i.pagador_nombre}
+                  {i.pagador_tipo === "propietario" && <span className="ml-1 text-indigo-500">(prop.)</span>}
+                </td>
+                <td className="px-3 py-2.5 hidden lg:table-cell text-slate-400 text-xs">{i.fecha}</td>
+                <td className="px-3 py-2.5 text-right font-bold text-emerald-600">{fmt(i.monto)}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <button onClick={() => setComprobante(i)} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button>
+                </td>
+                {rol !== "lectura" && (
+                  <td className="px-3 py-2.5 text-center">
+                    <button onClick={() => eliminar(i.id)} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg" title="Eliminar">🗑</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+          {filtrados.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50">
+                <td colSpan={4} className="px-3 py-2.5 font-bold text-slate-700">Total</td>
+                <td className="px-3 py-2.5 text-right font-bold text-emerald-600 text-base">{fmt(total)}</td>
+                <td colSpan={rol === "admin" ? 2 : 1} />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── COMPROBANTE OTROS INGRESOS ───────────────────────────────────────────────
+function ComprobanteOI({ ingreso, onClose }) {
+  const nro = String(ingreso.id).padStart(6, "0");
+  const catIcon = c => c === "Arriendo Local" ? "🏪" : c === "Arriendo Parqueadero" ? "🚗" : "📦";
+  const cat = ingreso.cat || ingreso.categoria;
+
+  const htmlComprobante = () => `<html><head><title>Comprobante Ingreso #${nro}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;padding:32px;color:#1e293b;max-width:480px;margin:auto}
+    h2{text-align:center;color:#4f46e5;margin-bottom:4px;font-size:18px}
+    .sub{text-align:center;color:#94a3b8;font-size:12px;margin-bottom:20px}
+    .box{border:2px dashed #c7d2fe;border-radius:12px;padding:16px;background:#eef2ff;margin-bottom:16px}
+    .fila{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #e0e7ff}
+    .fila:last-child{border:none}
+    .label{color:#64748b}.value{font-weight:600;color:#1e293b}
+    .total{display:flex;justify-content:space-between;padding:12px 0 0;border-top:2px solid #c7d2fe;margin-top:8px}
+    .total .label{font-weight:700;font-size:15px;color:#1e293b}
+    .total .value{font-weight:800;font-size:18px;color:#059669}
+    .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
+  </style></head><body>
+  <div style="text-align:center;font-size:36px;margin-bottom:8px">🏢</div>
+  <h2>Edificio Central</h2>
+  <p class="sub">Comprobante de Ingreso Oficial</p>
+  <div class="box">
+    <div class="fila"><span class="label">N° Comprobante</span><span class="value">#${nro}</span></div>
+    <div class="fila"><span class="label">Fecha</span><span class="value">${ingreso.fecha || todayStr()}</span></div>
+    <div class="fila"><span class="label">Categoría</span><span class="value">${catIcon(cat)} ${cat}</span></div>
+    <div class="fila"><span class="label">Concepto</span><span class="value">${ingreso.concepto}</span></div>
+    ${ingreso.detalle ? `<div class="fila"><span class="label">Detalle</span><span class="value">${ingreso.detalle}</span></div>` : ""}
+    <div class="fila"><span class="label">Pagador</span><span class="value">${ingreso.pagador_nombre}</span></div>
+    <div class="fila"><span class="label">Tipo</span><span class="value">${ingreso.pagador_tipo === "propietario" ? "Propietario" : "Externo"}</span></div>
+    <div class="total"><span class="label">Monto Recibido</span><span class="value">${fmt(ingreso.monto)}</span></div>
+  </div>
+  <p class="footer">✅ Verificado · ${todayStr()} · Edificio Central</p>
+  </body></html>`;
+
+  const imprimir = () => {
+    const blob = new Blob([htmlComprobante()], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = url;
+    document.body.appendChild(iframe);
+    iframe.onload = () => { iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 2000); };
+  };
+
+  const descargarPDF = async () => {
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:480px;height:auto;border:none;visibility:hidden;";
+      document.body.appendChild(iframe);
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(htmlComprobante());
+      iframe.contentDocument.close();
+      await new Promise(r => setTimeout(r, 600));
+      const canvas = await html2canvas(iframe.contentDocument.body, { scale: 2, useCORS: true, width: 480, height: iframe.contentDocument.body.scrollHeight, windowWidth: 480, windowHeight: iframe.contentDocument.body.scrollHeight });
+      document.body.removeChild(iframe);
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const margin = 10;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      pdf.addImage(imgData, "PNG", margin, margin, imgW, imgH);
+      pdf.save(`ingreso-${nro}.pdf`);
+    } catch (err) { alert("Error al generar PDF: " + err.message); }
+  };
+
+  const enviarCorreo = () => {
+    const cuerpo = [
+      `Comprobante de Ingreso #${nro} - Edificio Central`,
+      "─────────────────────────────",
+      `Fecha: ${ingreso.fecha || todayStr()}`,
+      `Categoría: ${cat}`,
+      `Concepto: ${ingreso.concepto}`,
+      ingreso.detalle ? `Detalle: ${ingreso.detalle}` : "",
+      `Pagador: ${ingreso.pagador_nombre}`,
+      `Monto: ${fmt(ingreso.monto)}`,
+      "─────────────────────────────",
+      `Verificado: ${todayStr()}`,
+    ].filter(Boolean).join("%0D%0A");
+    window.open(`mailto:?subject=Comprobante Ingreso #${nro} - Edificio Central&body=${cuerpo}`);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
+        <div className="text-center mb-5">
+          <div className="text-4xl mb-2">🏢</div>
+          <h2 className="text-xl font-bold text-slate-800">Edificio Central</h2>
+          <p className="text-slate-400 text-sm">Comprobante de Ingreso #{nro}</p>
+        </div>
+        <div className="border-2 border-dashed border-emerald-200 rounded-xl p-4 mb-4 space-y-2.5 text-sm bg-emerald-50">
+          {[["Fecha", ingreso.fecha || todayStr()], ["Categoría", `${catIcon(cat)} ${cat}`], ["Concepto", ingreso.concepto], ingreso.detalle ? ["Detalle", ingreso.detalle] : null, ["Pagador", ingreso.pagador_nombre], ["Tipo", ingreso.pagador_tipo === "propietario" ? "Propietario" : "Externo"]].filter(Boolean).map(([l, v]) => (
+            <div key={l} className="flex justify-between"><span className="text-slate-500">{l}</span><span className="font-semibold">{v}</span></div>
+          ))}
+          <div className="border-t-2 border-emerald-300 pt-2.5 flex justify-between">
+            <span className="font-bold text-slate-700">Monto recibido</span>
+            <span className="font-bold text-emerald-600 text-lg">{fmt(ingreso.monto)}</span>
+          </div>
+        </div>
+        <div className="text-center text-xs text-slate-400 mb-4">✅ Verificado · {todayStr()}</div>
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <button onClick={imprimir} className="flex flex-col items-center gap-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 py-2.5 rounded-xl text-xs font-semibold text-slate-600 transition"><span className="text-lg">🖨️</span>Imprimir</button>
+          <button onClick={descargarPDF} className="flex flex-col items-center gap-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2.5 rounded-xl text-xs font-semibold text-rose-600 transition"><span className="text-lg">📄</span>Guardar PDF</button>
+          <button onClick={enviarCorreo} className="flex flex-col items-center gap-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 py-2.5 rounded-xl text-xs font-semibold text-indigo-600 transition"><span className="text-lg">📧</span>Enviar correo</button>
+        </div>
+        <button onClick={onClose} className="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-semibold hover:bg-emerald-700 text-sm">Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── EGRESOS ──────────────────────────────────────────────────────────────────
-function Egresos({ egresos, setEgresos, rol }) {
-  const [filters, setFilters] = useState({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
+function Egresos({ egresos, setEgresos, rol, periodos = [] }) {
+  const lastPer = periodos[periodos.length - 1];
+  const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   const CATS = ["Mantenimiento", "Servicios", "Personal", "Administrativo", "Imprevistos"];
@@ -1742,12 +2128,12 @@ function Egresos({ egresos, setEgresos, rol }) {
     setShowNew(false);
     setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   };
-  const clearFilters = () => setFilters({ mes: today.m, anio: today.y, cat: "todos", concepto: "" });
+  const clearFilters = () => setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Egresos del Edificio</h2>
-        <button onClick={() => setShowNew(true)} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>
+        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>}
       </div>
       
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={clearFilters} />
@@ -1815,7 +2201,7 @@ function Egresos({ egresos, setEgresos, rol }) {
               <th className="px-4 py-3 text-left hidden md:table-cell">Categoría</th>
               <th className="px-4 py-3 text-left hidden md:table-cell">Fecha</th>
               <th className="px-4 py-3 text-right">Monto</th>
-              {rol === "admin" && <th className="px-4 py-3 text-center">Acc.</th>}
+              {rol !== "lectura" && <th className="px-4 py-3 text-center">Acc.</th>}
             </tr>
           </thead>
           <tbody>
@@ -1825,7 +2211,7 @@ function Egresos({ egresos, setEgresos, rol }) {
                 <td className="px-4 py-3 hidden md:table-cell"><span className="bg-slate-100 rounded-full px-2 py-0.5 text-xs">{e.cat}</span></td>
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
-                {rol === "admin" && <td className="px-4 py-3 text-center"><button onClick={async () => {
+                {rol !== "lectura" && <td className="px-4 py-3 text-center"><button onClick={async () => {
                   if (!confirm("¿Estás seguro de borrar este egreso?")) return;
                   const { error } = await supabase.from('egresos').delete().eq('id', e.id);
                   if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
@@ -1845,52 +2231,126 @@ function Egresos({ egresos, setEgresos, rol }) {
 function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuario }) {
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true });
+  const emptyForm = { nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true, modulos: [], permisos: {} };
+  const [form, setForm] = useState(emptyForm);
   const [emailSim, setEmailSim] = useState(null);
-  const ROL_LABELS = { admin: "Administrador", tesorero: "Tesorero", prop: "Propietario" };
-  const ROL_COLORS = { admin: "bg-indigo-100 text-indigo-700", tesorero: "bg-amber-100 text-amber-700", prop: "bg-slate-100 text-slate-600" };
-  const abrir = (u = null) => { if (u) { setForm({ ...u }); setEditId(u.id); } else { setForm({ nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true }); setEditId(null); } setShowNew(true); };
+
+  const ROL_LABELS = { admin: "Administrador", tesorero: "Tesorero", colaborador: "Colaborador", prop: "Propietario" };
+  const ROL_COLORS = { admin: "bg-indigo-100 text-indigo-700", tesorero: "bg-amber-100 text-amber-700", colaborador: "bg-teal-100 text-teal-700", prop: "bg-slate-100 text-slate-600" };
+
+  const esCustom = form.rol === "colaborador" || (form.modulos && form.modulos.length > 0 && form.rol !== "prop");
+
+  const abrir = (u = null) => {
+    if (u) setForm({ ...emptyForm, ...u, modulos: u.modulos || [], permisos: u.permisos || {} });
+    else setForm(emptyForm);
+    setEditId(u?.id || null);
+    setShowNew(true);
+  };
+
+  const toggleModulo = (modId) => {
+    const tiene = form.modulos.includes(modId);
+    const nuevos = tiene ? form.modulos.filter(m => m !== modId) : [...form.modulos, modId];
+    // Si se quita el módulo, quitar también su permiso
+    const nuevosPermisos = { ...form.permisos };
+    if (tiene) delete nuevosPermisos[modId];
+    else nuevosPermisos[modId] = "lectura"; // default al activar
+    setForm({ ...form, modulos: nuevos, permisos: nuevosPermisos });
+  };
+
+  const setNivel = (modId, nivel) => setForm({ ...form, permisos: { ...form.permisos, [modId]: nivel } });
+
   const guardar = async () => {
     if (!form.nombre || !form.user || !form.pass) return alert("Nombre, usuario y contraseña son obligatorios");
-    const payload = { nombre: form.nombre, email: form.email, rol: form.rol, usuario: form.user, pass: form.pass, deptos: form.deptos, activo: form.activo };
+    const payload = {
+      nombre: form.nombre, email: form.email, rol: form.rol,
+      usuario: form.user, pass: form.pass, deptos: form.deptos, activo: form.activo,
+      modulos: form.rol === "colaborador" ? form.modulos : [],
+      permisos: form.rol === "colaborador" ? form.permisos : {},
+    };
     if (editId) {
       const { error } = await supabase.from('usuarios').update(payload).eq('id', editId);
       if (error) { alert("Error al actualizar: " + error.message); return; }
-      const updated = { ...usuarioActivo, ...form, user: form.user };
-      setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...form } : u));
-      if (editId === usuarioActivo?.id) setUsuario(updated);
+      setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...form, user: form.user } : u));
+      if (editId === usuarioActivo?.id) setUsuario({ ...usuarioActivo, ...form });
     } else {
       const { data, error } = await supabase.from('usuarios').insert(payload).select().single();
       if (error) { alert("Error al crear usuario: " + error.message); return; }
-      setUsuarios([...usuarios, { ...data, user: data.usuario, deptos: data.deptos || [] }]);
+      setUsuarios([...usuarios, { ...data, user: data.usuario, deptos: data.deptos || [], modulos: data.modulos || [], permisos: data.permisos || {} }]);
     }
     setShowNew(false);
   };
+
   const toggleDepto = id => setForm({ ...form, deptos: form.deptos.includes(id) ? form.deptos.filter(x => x !== id) : [...form.deptos, id] });
   const simEmail = u => { setEmailSim(u); setTimeout(() => setEmailSim(null), 3000); };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Gestión de Usuarios</h2>
         {rol === "admin" && <button onClick={() => abrir()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">+ Nuevo Usuario</button>}
       </div>
+
       {emailSim && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700 flex items-center gap-2"><span className="text-xl">📧</span><span>Correo simulado enviado a <strong>{emailSim.email}</strong></span></div>}
+
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-lg">{editId ? "Editar Usuario" : "Nuevo Usuario"}</h3>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Nombre</label><input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
+              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Nombre</label>
+                <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Email</label>
+                <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
               <div><label className="text-xs text-slate-500 mb-1 block">Rol</label>
-                <select value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value, deptos: e.target.value !== "prop" ? [] : form.deptos })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                <select value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value, deptos: e.target.value !== "prop" ? [] : form.deptos, modulos: [], permisos: {} })} className="w-full border rounded-xl px-3 py-2 text-sm">
                   {rol === "admin" && <option value="admin">Administrador</option>}
-                  <option value="tesorero">Tesorero</option><option value="prop">Propietario</option>
+                  <option value="tesorero">Tesorero</option>
+                  <option value="colaborador">Colaborador</option>
+                  <option value="prop">Propietario</option>
                 </select>
               </div>
-              <div><label className="text-xs text-slate-500 mb-1 block">Usuario</label><input value={form.user} onChange={e => setForm({ ...form, user: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
-              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Contraseña</label><input type="password" value={form.pass} onChange={e => setForm({ ...form, pass: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
+              <div><label className="text-xs text-slate-500 mb-1 block">Usuario</label>
+                <input value={form.user} onChange={e => setForm({ ...form, user: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
+              <div className="col-span-2"><label className="text-xs text-slate-500 mb-1 block">Contraseña</label>
+                <input type="password" value={form.pass} onChange={e => setForm({ ...form, pass: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" />
+              </div>
             </div>
+
+            {/* ── Permisos por módulo (solo colaborador) ── */}
+            {form.rol === "colaborador" && (
+              <div className="space-y-2">
+                <label className="text-xs text-slate-500 font-semibold block">🔐 Acceso a módulos</label>
+                <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                  {MODULOS_DISPONIBLES.map(m => {
+                    const tiene = form.modulos.includes(m.id);
+                    const nivel = form.permisos[m.id] || "lectura";
+                    return (
+                      <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 last:border-0 transition ${tiene ? "bg-white" : ""}`}>
+                        <input type="checkbox" checked={tiene} onChange={() => toggleModulo(m.id)} className="rounded accent-indigo-600" />
+                        <span className="text-sm flex-1">{m.icon} {m.label}</span>
+                        {tiene && (
+                          <div className="flex gap-1">
+                            <button onClick={() => setNivel(m.id, "lectura")} className={`text-xs px-2 py-1 rounded-lg border transition font-medium ${nivel === "lectura" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"}`}>
+                              👁 Solo leer
+                            </button>
+                            <button onClick={() => setNivel(m.id, "escritura")} className={`text-xs px-2 py-1 rounded-lg border transition font-medium ${nivel === "escritura" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200"}`}>
+                              ✏️ Editar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400">👁 Solo leer: puede ver pero no modificar · ✏️ Editar: acceso completo</p>
+              </div>
+            )}
+
+            {/* ── Propiedades (solo prop) ── */}
             {form.rol === "prop" && (
               <div>
                 <label className="text-xs text-slate-500 mb-2 block">Propiedades ({form.deptos.length} selec.)</label>
@@ -1899,33 +2359,55 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-2"><input type="checkbox" checked={form.activo} onChange={e => setForm({ ...form, activo: e.target.checked })} id="activo" className="rounded" /><label htmlFor="activo" className="text-sm text-slate-600">Usuario activo</label></div>
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={form.activo} onChange={e => setForm({ ...form, activo: e.target.checked })} id="activo" className="rounded" />
+              <label htmlFor="activo" className="text-sm text-slate-600">Usuario activo</label>
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-              <button onClick={guardar} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">Guardar</button>
+              <button onClick={guardar} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Listado agrupado por rol ── */}
       <div className="space-y-2">
-        {[{ r: "admin", l: "Administradores" }, { r: "tesorero", l: "Tesoreros" }, { r: "prop", l: "Propietarios" }].map(({ r, l }) => {
+        {[{ r: "admin", l: "Administradores" }, { r: "tesorero", l: "Tesoreros" }, { r: "colaborador", l: "Colaboradores" }, { r: "prop", l: "Propietarios" }].map(({ r, l }) => {
           const list = usuarios.filter(u => u.rol === r); if (!list.length) return null;
           return (
             <div key={r} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200"><h3 className="font-semibold text-slate-700 text-sm">{l} ({list.length})</h3></div>
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                <h3 className="font-semibold text-slate-700 text-sm">{l} ({list.length})</h3>
+              </div>
               {list.map(u => (
-                <div key={u.id} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 font-bold text-sm flex-shrink-0">{u.nombre.slice(0, 2).toUpperCase()}</div>
+                <div key={u.id} className="flex items-start gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                  <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 font-bold text-sm flex-shrink-0 mt-0.5">{u.nombre.slice(0, 2).toUpperCase()}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-slate-800 text-sm truncate">{u.nombre}</div>
+                    <div className="font-semibold text-slate-800 text-sm">{u.nombre}</div>
                     <div className="text-xs text-slate-400">{u.email} · @{u.user}</div>
-                    {u.deptos?.length > 0 && <div className="text-xs text-indigo-600">{u.deptos.map(id => deptos.find(d => d.id === id)?.depto).join(", ")}</div>}
+                    {u.deptos?.length > 0 && <div className="text-xs text-indigo-600 mt-0.5">{u.deptos.map(id => deptos.find(d => d.id === id)?.depto).filter(Boolean).join(", ")}</div>}
+                    {/* Módulos del colaborador */}
+                    {u.rol === "colaborador" && u.modulos?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {u.modulos.map(mid => {
+                          const m = MODULOS_DISPONIBLES.find(x => x.id === mid);
+                          const nivel = u.permisos?.[mid] || "lectura";
+                          return m ? (
+                            <span key={mid} className={`text-xs px-1.5 py-0.5 rounded-md font-medium ${nivel === "escritura" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                              {m.icon} {m.label} {nivel === "escritura" ? "✏️" : "👁"}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${ROL_COLORS[u.rol]}`}>{ROL_LABELS[u.rol]}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${ROL_COLORS[u.rol] || "bg-slate-100 text-slate-600"}`}>{ROL_LABELS[u.rol] || u.rol}</span>
                     {!u.activo && <span className="text-xs bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Inactivo</span>}
                     <button onClick={() => simEmail(u)} className="text-slate-300 hover:text-indigo-500 text-lg" title="Simular correo">📧</button>
-                    {rol === "admin" && <button onClick={() => abrir(u)} className="text-slate-300 hover:text-indigo-500 text-lg">✏️</button>}
+                    {rol === "admin" && <button onClick={() => abrir(u)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all text-lg">✏️</button>}
                   </div>
                 </div>
               ))}
@@ -1998,11 +2480,35 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
 }
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
-const PERMS = { admin: ["dashboard", "periodos", "pagos", "propiedades", "derramas", "egresos", "usuarios"], tesorero: ["dashboard", "pagos", "derramas", "egresos"], prop: ["portal"] };
+
+const MODULOS_DISPONIBLES = [
+  { id: "dashboard",      label: "Dashboard",       icon: "📊" },
+  { id: "periodos",       label: "Períodos",         icon: "📅" },
+  { id: "pagos",          label: "Pagos",            icon: "💳" },
+  { id: "propiedades",    label: "Propiedades",      icon: "🏠" },
+  { id: "derramas",       label: "Derramas",         icon: "🔔" },
+  { id: "egresos",        label: "Egresos",          icon: "📤" },
+  { id: "otros_ingresos", label: "Otros Ingresos",   icon: "💰" },
+  { id: "usuarios",       label: "Usuarios",         icon: "👥" },
+];
+const PERMS = {
+  admin:       ["dashboard","periodos","pagos","propiedades","derramas","egresos","otros_ingresos","usuarios"],
+  tesorero:    ["dashboard","pagos","derramas","egresos","otros_ingresos"],
+  colaborador: ["dashboard"],
+  prop:        ["portal"],
+};
+// Nivel de acceso por módulo: "escritura" | "lectura"
+const PERMS_NIVEL_DEFAULT = {
+  admin:       { dashboard:"escritura", periodos:"escritura", pagos:"escritura", propiedades:"escritura", derramas:"escritura", egresos:"escritura", otros_ingresos:"escritura", usuarios:"escritura" },
+  tesorero:    { dashboard:"lectura",   pagos:"escritura",    derramas:"escritura", egresos:"escritura",   otros_ingresos:"escritura" },
+  colaborador: { dashboard:"lectura" },
+  prop:        { portal:"lectura" },
+};
 const ALL_TABS = [
   { id: "dashboard", icon: "📊", label: "Dashboard" }, { id: "periodos", icon: "📅", label: "Períodos" },
   { id: "pagos", icon: "💳", label: "Pagos" }, { id: "propiedades", icon: "🏠", label: "Propiedades" },
   { id: "derramas", icon: "🔔", label: "Derramas" }, { id: "egresos", icon: "📤", label: "Egresos" },
+  { id: "otros_ingresos", icon: "💰", label: "Otros Ing." },
   { id: "usuarios", icon: "👥", label: "Usuarios" }, { id: "portal", icon: "👤", label: "Mi Portal" },
 ];
 
@@ -2015,19 +2521,21 @@ export default function App() {
   const [pagos, setPagos] = useState([]);
   const [derramas, setDerramas] = useState([]);
   const [egresos, setEgresos] = useState([]);
+  const [otrosIngresos, setOtrosIngresos] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => { cargarDatos(); }, []);
 
   const cargarDatos = async () => {
     setCargando(true);
-    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }] = await Promise.all([
+    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }, { data: dataOtrosIngresos }] = await Promise.all([
       supabase.from('deptos').select('*').order('id'),
       supabase.from('usuarios').select('*').order('id'),
       supabase.from('periodos').select('*').order('id'),
       supabase.from('pagos').select('*').order('id'),
       supabase.from('derramas').select('*').order('id'),
-      supabase.from('egresos').select('*').order('id')
+      supabase.from('egresos').select('*').order('id'),
+      supabase.from('otros_ingresos').select('*').order('id')
     ]);
     const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
     const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
@@ -2041,6 +2549,7 @@ export default function App() {
     const egresosAdap = (dataEgresos || []).map(e => ({ ...e, soporte: e.soporte || null }));
     setDerramas(derramasAdap);
     setEgresos(egresosAdap);
+    setOtrosIngresos((dataOtrosIngresos || []).map(i => ({ ...i, cat: i.categoria })));
     setCargando(false);
   };
 
@@ -2058,7 +2567,18 @@ export default function App() {
   );
   if (!usuario) return <Login usuarios={usuarios} onLogin={login} />;
 
-  const tabs = ALL_TABS.filter(t => PERMS[usuario.rol]?.includes(t.id));
+  // Si el usuario tiene módulos personalizados, usarlos; sino usar PERMS por rol
+  const tabsIds = (usuario.modulos && usuario.modulos.length > 0)
+    ? usuario.modulos
+    : (PERMS[usuario.rol] || []);
+  const tabs = ALL_TABS.filter(t => tabsIds.includes(t.id));
+
+  // Helper: nivel de acceso para un módulo
+  const nivelAcceso = (modId) => {
+    if (usuario.permisos && usuario.permisos[modId]) return usuario.permisos[modId];
+    return PERMS_NIVEL_DEFAULT[usuario.rol]?.[modId] || "lectura";
+  };
+  const puedeEscribir = (modId) => nivelAcceso(modId) === "escritura";
   const rolLabel = usuario.rol === "admin" ? "Administrador" : usuario.rol === "tesorero" ? "Tesorero" : `Prop. ${usuario.deptos?.map(id => deptos.find(d => d.id === id)?.depto).join(", ")}`;
   const initials = usuario.nombre.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   const perActual = periodos[periodos.length - 1];
@@ -2142,12 +2662,13 @@ export default function App() {
 
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
-          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} />}
+          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
-          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={usuario.rol} />}
-          {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={usuario.rol} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={usuario.rol} />}
-          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={usuario.rol} />}
+          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} />}
+          {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} />}
+          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} />}
+          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} periodos={periodos} />}
+          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} periodos={periodos} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
         </main>
