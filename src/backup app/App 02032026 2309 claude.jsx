@@ -1703,7 +1703,7 @@ export default function App() {
         </header>
 
         {/* ── MAIN ── */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
           {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={usuario.rol} />}
@@ -1714,11 +1714,11 @@ export default function App() {
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
         </main>
 
-        {/* ── NAV MÓVIL inferior fija ── */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex bg-gray-900 border-t border-white/10 overflow-x-auto" style={{paddingBottom: "env(safe-area-inset-bottom)"}}>
+        {/* ── NAV MÓVIL inferior ── */}
+        <nav className="lg:hidden flex bg-gray-900 border-t border-white/10 overflow-x-auto flex-shrink-0">
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-shrink-0 flex flex-col items-center py-2.5 px-3 text-xs transition ${tab === t.id ? "text-indigo-400" : "text-white/40 hover:text-white/70"}`}>
+              className={`flex-shrink-0 flex flex-col items-center py-2.5 px-3 text-xs transition ${tab === t.id ? "text-indigo-400" : "text-white/40"}`}>
               <span className="text-lg">{t.icon}</span>
               <span className="mt-0.5">{t.label}</span>
             </button>
