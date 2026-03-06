@@ -1417,7 +1417,8 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const [nuevoMonto, setNuevoMonto] = useState("");
   const [nuevoMontoPagado, setNuevoMontoPagado] = useState("");
 
-  const doRevertir = id => {
+  const doRevertir = async id => {
+    await supabase.from('pagos').update({ monto_pagado: 0, estado: "pendiente", abonos: [] }).eq('id', id);
     setPagos(pagos.map(p => p.id === id ? { ...p, abonos: [], montoPagado: 0, estado: "pendiente" } : p));
     setRevertir(null);
   };
@@ -2255,8 +2256,20 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
   const [showNew, setShowNew] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   const CATS = ["Mantenimiento", "Servicios", "Personal", "Administrativo", "Imprevistos"];
+
+  const abrir = (e = null) => {
+    if (e) {
+      setEditId(e.id);
+      setForm({ concepto: e.concepto, cat: e.cat, monto: String(e.monto), detalle: e.detalle || "", soporte: e.soporte || null });
+    } else {
+      setEditId(null);
+      setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
+    }
+    setShowNew(true);
+  };
   const filterConfig = [
     { key: "mes", label: "Mes", type: "select", options: MESES.map((m, i) => ({ value: String(i), label: m })), placeholder: "Todos los meses" },
     { key: "anio", label: "Año", type: "select", options: [{ value: "2025", label: "2025" }, { value: "2026", label: "2026" }] },
@@ -2278,11 +2291,19 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
     const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
     const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
-    const nuevo = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), mes, anio, fecha, detalle: form.detalle || null, soporte: form.soporte || null };
-    const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
-    if (error) { alert("Error al guardar egreso: " + error.message); return; }
-    setEgresos([...egresos, data]);
+    const payload = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), detalle: form.detalle || null, soporte: form.soporte || null };
+    if (editId) {
+      const { error } = await supabase.from('egresos').update(payload).eq('id', editId);
+      if (error) { alert("Error al actualizar: " + error.message); return; }
+      setEgresos(egresos.map(e => e.id === editId ? { ...e, ...payload } : e));
+    } else {
+      const nuevo = { ...payload, mes, anio, fecha };
+      const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
+      if (error) { alert("Error al guardar egreso: " + error.message); return; }
+      setEgresos([...egresos, data]);
+    }
     setShowNew(false);
+    setEditId(null);
     setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
   };
   const clearFilters = () => setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
@@ -2290,7 +2311,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Egresos del Edificio</h2>
-        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>}
+        {rol !== "lectura" && <button onClick={() => abrir()} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>}
       </div>
       
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={clearFilters} />
@@ -2298,7 +2319,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-            <h3 className="font-bold text-lg">Nuevo Egreso</h3>
+            <h3 className="font-bold text-lg">{editId ? "✏️ Editar Egreso" : "Nuevo Egreso"}</h3>
             <div><label className="text-xs text-slate-500 mb-1 block">Concepto</label><input value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Monto ($)</label><input type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Detalle adicional <span className="text-slate-300">(opcional)</span></label><input value={form.detalle} onChange={e => setForm({ ...form, detalle: e.target.value })} placeholder="Ej: N° factura, proveedor, observaciones..." className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
@@ -2330,7 +2351,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
             </div>
 <div className="flex gap-2">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-              <button onClick={agregar} className="flex-1 bg-rose-500 text-white py-2 rounded-xl text-sm font-semibold">Guardar</button>
+              <button onClick={agregar} className="flex-1 bg-rose-500 text-white py-2 rounded-xl text-sm font-semibold">{editId ? "💾 Guardar" : "Guardar"}</button>
             </div>
           </div>
         </div>
@@ -2371,12 +2392,15 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
                 <td className="px-4 py-3 hidden md:table-cell"><span className="bg-slate-100 rounded-full px-2 py-0.5 text-xs">{e.cat}</span></td>
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
-                {canDelete && <td className="px-4 py-3 text-center"><button onClick={async () => {
-                  if (!confirm("¿Estás seguro de borrar este egreso?")) return;
-                  const { error } = await supabase.from('egresos').delete().eq('id', e.id);
-                  if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
-                  setEgresos(egresos.filter(x => x.id !== e.id));
-                }} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg" title="Eliminar egreso">🗑</button></td>}
+                <td className="px-4 py-3 text-center">
+                  {rol !== "lectura" && <button onClick={() => abrir(e)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all duration-150 cursor-pointer text-lg" title="Editar egreso">✏️</button>}
+                  {canDelete && <button onClick={async () => {
+                    if (!confirm("¿Estás seguro de borrar este egreso?")) return;
+                    const { error } = await supabase.from('egresos').delete().eq('id', e.id);
+                    if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
+                    setEgresos(egresos.filter(x => x.id !== e.id));
+                  }} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg ml-1" title="Eliminar egreso">🗑</button>}
+                </td>
               </tr>
             ))}
             {filtrados.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Sin resultados para los filtros aplicados</td></tr>}
