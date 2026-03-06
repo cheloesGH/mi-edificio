@@ -2677,8 +2677,10 @@ export default function App() {
       if (session) {
         const { data: usr } = await supabase.from('usuarios').select('*').eq('auth_id', session.user.id).eq('activo', true).single();
         if (usr) setUsuario({ ...usr, user: usr.usuario, deptos: usr.deptos || [], modulos: usr.modulos || [], permisos: usr.permisos || {} });
+        await cargarDatos();
+      } else {
+        setCargando(false);
       }
-      await cargarDatos();
     };
     init();
   }, []);
@@ -2710,7 +2712,7 @@ export default function App() {
     setCargando(false);
   };
 
-  const login = u => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); };
+  const login = async (u) => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); await cargarDatos(); };
   const logout = async () => { await supabase.auth.signOut(); setUsuario(null); };
 
   if (cargando) return (
