@@ -2805,6 +2805,56 @@ const ALL_TABS = [
   { id: "usuarios", icon: "👥", label: "Usuarios" }, { id: "portal", icon: "👤", label: "Mi Portal" },
 ];
 
+
+// ─── HOOK INACTIVIDAD ────────────────────────────────────────────────────────
+function useInactividad(onWarning, onLogout, tiempoAviso = 8 * 60 * 1000, tiempoLogout = 2 * 60 * 1000) {
+  useEffect(() => {
+    let timerAviso, timerLogout;
+    const reset = () => {
+      clearTimeout(timerAviso);
+      clearTimeout(timerLogout);
+      timerAviso = setTimeout(() => {
+        onWarning();
+        timerLogout = setTimeout(onLogout, tiempoLogout);
+      }, tiempoAviso);
+    };
+    const eventos = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    eventos.forEach(e => window.addEventListener(e, reset));
+    reset();
+    return () => {
+      clearTimeout(timerAviso);
+      clearTimeout(timerLogout);
+      eventos.forEach(e => window.removeEventListener(e, reset));
+    };
+  }, []);
+}
+
+// ─── MODAL INACTIVIDAD ───────────────────────────────────────────────────────
+function ModalInactividad({ onContinuar, onCerrar }) {
+  const [seg, setSeg] = useState(120);
+  useEffect(() => {
+    const iv = setInterval(() => setSeg(s => s <= 1 ? (clearInterval(iv), 0) : s - 1), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  const mins = Math.floor(seg / 60);
+  const secs = String(seg % 60).padStart(2, '0');
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[999] p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 text-center">
+        <div className="text-4xl">⏱️</div>
+        <h3 className="font-bold text-lg text-slate-800">¿Sigues ahí?</h3>
+        <p className="text-sm text-slate-500">Tu sesión se cerrará por inactividad en</p>
+        <div className="text-4xl font-bold text-rose-500">{mins}:{secs}</div>
+        <p className="text-xs text-slate-400">Si no respondes, serás redirigido al login</p>
+        <div className="flex gap-2">
+          <button onClick={onCerrar} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-50">Cerrar sesión</button>
+          <button onClick={onContinuar} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">✅ Seguir</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [usuarios, setUsuarios] = useState([]);
   const [usuario, setUsuario] = useState(null);
@@ -2816,6 +2866,7 @@ export default function App() {
   const [egresos, setEgresos] = useState([]);
   const [otrosIngresos, setOtrosIngresos] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [showInactividad, setShowInactividad] = useState(false);
 
   useEffect(() => {
     // Restaurar sesión activa al recargar la página
@@ -2873,7 +2924,15 @@ export default function App() {
   };
 
   const login = async (u) => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); await cargarDatos(); };
-  const logout = async () => { await supabase.auth.signOut(); setUsuario(null); };
+  const logout = async () => { await supabase.auth.signOut(); setUsuario(null); setShowInactividad(false); };
+
+  // Hook inactividad — solo activo cuando hay sesión
+  useInactividad(
+    () => { setShowInactividad(true); },
+    () => { logout(); },
+    8 * 60 * 1000,
+    2 * 60 * 1000
+  );
 
   if (cargando) return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center">
@@ -2905,6 +2964,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
+      {showInactividad && (
+        <ModalInactividad
+          onContinuar={() => setShowInactividad(false)}
+          onCerrar={logout}
+        />
+      )}
 
       {/* ── SIDEBAR OSCURO (desktop) ── */}
       <aside className="hidden lg:flex flex-col w-60 bg-gray-900 text-white min-h-screen flex-shrink-0">
