@@ -920,7 +920,13 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const otrosMes = otrosIngresos.filter(o => o.mes === per?.mes && o.anio === per?.anio).reduce((a, o) => a + o.monto, 0);
   const ingTotal = ingMes + otrosMes;
   const getNombre = id => usuarios.find(u => u.deptos?.includes(id))?.nombre || "-";
-  const morososList = cuotas.filter(p => p.estado !== "pagado").map(p => ({ ...p, propietario: getNombre(p.deptoId), saldo: parseFloat((p.montoTotal - p.montoPagado).toFixed(2)) }));
+  // morososList agrupa TODOS los pagos pendientes por deptoId (no solo el período actual)
+  const morososMap = {};
+  pagos.filter(p => p.estado !== "pagado").forEach(p => {
+    if (!morososMap[p.deptoId]) morososMap[p.deptoId] = { deptoId: p.deptoId, depto: p.depto, propietario: getNombre(p.deptoId), periodoId: p.periodoId, periodoNombre: p.periodoNombre, saldo: 0 };
+    morososMap[p.deptoId].saldo = parseFloat((morososMap[p.deptoId].saldo + (p.montoTotal - p.montoPagado)).toFixed(2));
+  });
+  const morososList = Object.values(morososMap).sort((a, b) => b.saldo - a.saldo);
   const pagosCobrados = cuotas.filter(p => p.estado === "pagado");
   const pagosPendientes = cuotas.filter(p => p.estado !== "pagado");
 
@@ -2373,6 +2379,9 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
       if (error) { alert("Error al actualizar: " + error.message); return; }
       setEgresos(egresos.map(e => e.id === editId ? { ...e, ...payload } : e));
     } else {
+      // Validar concepto duplicado en el mismo período
+      const duplicado = egresos.find(e => e.concepto.trim().toLowerCase() === form.concepto.trim().toLowerCase() && e.mes === mes && e.anio === anio);
+      if (duplicado) { alert(`Ya existe un egreso con el concepto "${form.concepto}" en este período.`); return; }
       const nuevo = { ...payload, mes, anio, fecha };
       const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
       if (error) { alert("Error al guardar egreso: " + error.message); return; }
