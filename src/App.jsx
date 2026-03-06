@@ -1415,6 +1415,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
 
   const [editMonto, setEditMonto] = useState(null);
   const [nuevoMonto, setNuevoMonto] = useState("");
+  const [nuevoMontoPagado, setNuevoMontoPagado] = useState("");
 
   const doRevertir = id => {
     setPagos(pagos.map(p => p.id === id ? { ...p, abonos: [], montoPagado: 0, estado: "pendiente" } : p));
@@ -1423,17 +1424,16 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
 
   const guardarMonto = async () => {
     if (!nuevoMonto || isNaN(nuevoMonto)) return;
-    const monto = parseFloat(nuevoMonto);
     const p = editMonto;
-    // Si es pago virtual (derrama sin registro), no podemos editar monto_total directamente
-    // Solo editamos pagos ya existentes en BD
     if (String(p.id).startsWith('v-')) { alert("Registra primero un abono para poder editar el monto"); return; }
-    await supabase.from('pagos').update({ monto_total: monto }).eq('id', p.id);
-    const estado = p.montoPagado >= monto ? "pagado" : p.montoPagado > 0 ? "parcial" : "pendiente";
-    await supabase.from('pagos').update({ estado }).eq('id', p.id);
-    setPagos(pagos.map(x => x.id === p.id ? { ...x, montoTotal: monto, estado } : x));
+    const monto = parseFloat(nuevoMonto);
+    const montoPag = nuevoMontoPagado !== "" && !isNaN(nuevoMontoPagado) ? parseFloat(nuevoMontoPagado) : p.montoPagado;
+    const estado = montoPag >= monto ? "pagado" : montoPag > 0 ? "parcial" : "pendiente";
+    await supabase.from('pagos').update({ monto_total: monto, monto_pagado: montoPag, estado }).eq('id', p.id);
+    setPagos(pagos.map(x => x.id === p.id ? { ...x, montoTotal: monto, montoPagado: montoPag, estado } : x));
     setEditMonto(null);
     setNuevoMonto("");
+    setNuevoMontoPagado("");
   };
   const estadoBadge = p => {
     const saldo = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
@@ -1446,15 +1446,21 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const modalEditMonto = editMonto && (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-        <h3 className="font-bold text-lg">✏️ Editar monto total</h3>
-        <p className="text-sm text-slate-500">Propiedad <strong>{editMonto.depto}</strong></p>
+        <h3 className="font-bold text-lg">✏️ Editar montos</h3>
+        <p className="text-sm text-slate-500">Propiedad <strong>{editMonto.depto}</strong> — {getNombre(editMonto.deptoId)}</p>
         <div>
-          <label className="text-xs text-slate-500 mb-1 block">Monto actual: <strong>{fmt(editMonto.montoTotal)}</strong></label>
+          <label className="text-xs text-slate-500 mb-1 block">Monto total (cuota)</label>
           <input type="number" value={nuevoMonto} onChange={e => setNuevoMonto(e.target.value)}
-            placeholder="Nuevo monto..." className="w-full border rounded-xl px-3 py-2 text-sm" autoFocus />
+            placeholder="Monto total..." className="w-full border rounded-xl px-3 py-2 text-sm" autoFocus />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Monto pagado</label>
+          <input type="number" value={nuevoMontoPagado} onChange={e => setNuevoMontoPagado(e.target.value)}
+            placeholder={`Actual: ${fmt(editMonto.montoPagado)}`} className="w-full border rounded-xl px-3 py-2 text-sm" />
+          <p className="text-xs text-slate-400 mt-1">Deja vacío para mantener el valor actual</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => { setEditMonto(null); setNuevoMonto(""); }} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+          <button onClick={() => { setEditMonto(null); setNuevoMonto(""); setNuevoMontoPagado(""); }} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
           <button onClick={guardarMonto} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
         </div>
       </div>
@@ -1547,7 +1553,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                   <td className="px-3 py-2.5 hidden lg:table-cell text-slate-400 text-xs">Piso {p.depto?.[0]}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell font-semibold">
                     {fmt(p.montoTotal)}
-                    {rol !== "lectura" && p.estado !== "pagado" && <button onClick={() => { setEditMonto(p); setNuevoMonto(String(p.montoTotal)); }} className="ml-1 text-slate-300 hover:text-indigo-500 transition-colors text-xs" title="Editar monto">✏️</button>}
+                    {rol !== "lectura" && <button onClick={() => { setEditMonto(p); setNuevoMonto(String(p.montoTotal)); setNuevoMontoPagado(String(p.montoPagado)); }} className="ml-1 text-slate-300 hover:text-indigo-500 transition-colors text-xs" title="Editar montos">✏️</button>}
                   </td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">{fmt(p.montoPagado)}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
