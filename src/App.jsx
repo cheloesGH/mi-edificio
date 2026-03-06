@@ -1623,7 +1623,7 @@ const perActual = periodos[periodos.length - 1];
     { key: "propietario", label: "Propietario", type: "text", placeholder: "Buscar nombre..." },
     { key: "propiedad", label: "Propiedad", type: "text", placeholder: "Ej: 2A, 3B..." },
     { key: "piso", label: "Piso", type: "select", options: pisos.map(p => ({ value: String(p), label: `Piso ${p}` })) },
-    { key: "estado", label: "Estado", type: "select", options: [{ value: "pagado", label: "✅ Al día" }, { value: "parcial", label: "💧 Parcial" }, { value: "pendiente", label: "⚠️ Moroso" }] },
+    { key: "estado", label: "Estado", type: "select", options: [{ value: "pagado", label: "✅ Al día" }, { value: "parcial", label: "💧 Parcial" }, { value: "pendiente", label: "⚠️ En mora" }] },
     { key: "tipo", label: "Tipo", type: "select", options: [{ value: "departamento", label: "🏢 Departamento" }, { value: "casa", label: "🏠 Casa" }, { value: "local", label: "🏪 Local" }] },
   ];
   
@@ -1681,7 +1681,7 @@ const guardar = async () => {
   };
   const estColor = e => e === "pagado" ? "text-emerald-600" : e === "parcial" ? "text-blue-500" : "text-rose-500";
   const estIcon = e => e === "pagado" ? "✅" : e === "parcial" ? "💧" : "⚠️";
-  const estLabel = e => e === "pagado" ? "Al día" : e === "parcial" ? "Parcial" : "Moroso";
+  const estLabel = e => e === "pagado" ? "Al día" : e === "parcial" ? "Parcial" : "En mora";
   if (sel) return (
     <div className="space-y-4">
       <button onClick={() => { setSel(null); setEdit(false); }} className="text-indigo-600 text-sm font-semibold hover:underline">← Volver</button>
@@ -1837,27 +1837,60 @@ const guardar = async () => {
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
 function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [] }) {
   const [showNew, setShowNew] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
-  const crear = async () => {
+
+  const abrir = (d = null) => {
+    if (d) {
+      setEditId(d.id);
+      setForm({ titulo: d.titulo, descripcion: d.descripcion || "", montoTotal: String(d.montoTotal), distribucion: d.distribucion, mes: d.mes, anio: d.anio, deptoId: d.depto_id ? String(d.depto_id) : "" });
+    } else {
+      setEditId(null);
+      setForm({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
+    }
+    setShowNew(true);
+  };
+
+  const guardar = async () => {
     if (!form.titulo || !form.montoTotal) return;
     if (form.distribucion === "individual" && !form.deptoId) return alert("Selecciona una propiedad");
-    const nueva = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), fecha: todayStr(), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, depto_id: form.distribucion === "individual" ? Number(form.deptoId) : null, estado: "activa" };
-    const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
-    if (error) { alert("Error al guardar derrama: " + error.message); return; }
-    setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
+    const payload = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, depto_id: form.distribucion === "individual" ? Number(form.deptoId) : null };
+
+    if (editId) {
+      const { error } = await supabase.from('derramas').update(payload).eq('id', editId);
+      if (error) { alert("Error al actualizar: " + error.message); return; }
+      // Recalcular pagos asociados a esta derrama
+      const totalM2 = deptos.reduce((a, d) => a + (Number(d.m2) || 0), 0);
+      const { data: pagosDerramas } = await supabase.from('pagos').select('*').eq('periodo_id', editId).not('periodo_id', 'is', null);
+      if (pagosDerramas?.length) {
+        for (const p of pagosDerramas) {
+          const depto = deptos.find(d => d.id === p.depto_id);
+          if (!depto) continue;
+          let nuevoMonto = Number(form.montoTotal);
+          if (form.distribucion === "igual") nuevoMonto = parseFloat((Number(form.montoTotal) / deptos.length).toFixed(2));
+          else if (form.distribucion === "coeficiente") nuevoMonto = parseFloat((Number(depto.m2) / totalM2 * Number(form.montoTotal)).toFixed(2));
+          await supabase.from('pagos').update({ monto_total: nuevoMonto }).eq('id', p.id);
+        }
+      }
+      setDerramas(derramas.map(d => d.id === editId ? { ...d, ...payload, montoTotal: Number(form.montoTotal) } : d));
+    } else {
+      const nueva = { ...payload, fecha: todayStr(), estado: "activa" };
+      const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
+      if (error) { alert("Error al guardar derrama: " + error.message); return; }
+      setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
+    }
     setShowNew(false);
-    setForm({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
   };
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Derramas Extraordinarias</h2>
-        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700">+ Nueva Derrama</button>}
+        {rol !== "lectura" && <button onClick={() => abrir()} className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700">+ Nueva Derrama</button>}
       </div>
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-            <h3 className="font-bold text-lg">Nueva Derrama</h3>
+            <h3 className="font-bold text-lg">{editId ? "✏️ Editar Derrama" : "Nueva Derrama"}</h3>
             <div><label className="text-xs text-slate-500 mb-1 block">Título</label><input value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Descripción</label><input value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Monto Total ($)</label><input type="number" value={form.montoTotal} onChange={e => setForm({ ...form, montoTotal: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
@@ -1887,9 +1920,10 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
                 </select>
               </div>
             )}
+            {editId && <p className="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">⚠️ Al guardar se recalcularán los montos de los pagos asociados según la distribución.</p>}
             <div className="flex gap-2">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-              <button onClick={crear} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-semibold">Crear</button>
+              <button onClick={guardar} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-semibold">{editId ? "💾 Guardar" : "Crear"}</button>
             </div>
           </div>
         </div>
@@ -1903,9 +1937,10 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
                 <p className="text-xs text-slate-500">{d.descripcion} · {d.fecha}</p>
                 <p className="text-xs text-slate-500 mt-0.5">Distribución: <strong>{d.distribucion === "igual" ? "Partes iguales" : d.distribucion === "individual" ? "🏠 Propietario específico" : "Por m²"}</strong></p>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-1">
                 <p className="text-xl font-bold text-rose-600">{fmt(d.montoTotal)}</p>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.estado === "activa" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{d.estado === "activa" ? "🔔 Activa" : "✅ Cerrada"}</span>
+                {rol !== "lectura" && <button onClick={() => abrir(d)} className="text-xs text-slate-400 hover:text-purple-600 transition mt-1">✏️ Editar</button>}
               </div>
             </div>
           </div>
