@@ -1336,13 +1336,22 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     return true;
   }), [pagos, fOrd]);
   const derActual = derramas.find(d => d.id === Number(fDer.derrama));
-  const derBase = derActual ? deptos.map(d => {
-    const monto = derActual.distribucion === "coeficiente" ? parseFloat((d.coef / 100 * derActual.montoTotal).toFixed(2)) : parseFloat((derActual.montoTotal / 30).toFixed(2));
-    const ex = pagos.find(p => p.tipo === "derrama" && p.deptoId === d.id && p.periodoNombre === derActual.titulo);
-    // Si existe en BD, aseguramos que montoTotal sea el calculado (por si no vino de Supabase)
-    if (ex) return { ...ex, montoTotal: ex.montoTotal || monto };
-    return { id: `v-${d.id}-${derActual.id}`, tipo: "derrama", deptoId: d.id, depto: d.depto, periodoNombre: derActual.titulo, periodoId: periodos[periodos.length - 1]?.id, mes: derActual.mes, anio: derActual.anio, montoTotal: monto, abonos: [], montoPagado: 0, estado: "pendiente", concepto: derActual.titulo };
-  }) : [];
+  const derBase = derActual ? (() => {
+    // Si es individual, solo mostrar el depto específico
+    const deptosTarget = derActual.distribucion === "individual" && derActual.depto_id
+      ? deptos.filter(d => d.id === derActual.depto_id)
+      : deptos;
+    return deptosTarget.map(d => {
+      const monto = derActual.distribucion === "coeficiente"
+        ? parseFloat((d.coef / 100 * derActual.montoTotal).toFixed(2))
+        : derActual.distribucion === "individual"
+          ? derActual.montoTotal
+          : parseFloat((derActual.montoTotal / deptosTarget.length).toFixed(2));
+      const ex = pagos.find(p => p.tipo === "derrama" && p.deptoId === d.id && p.periodoNombre === derActual.titulo);
+      if (ex) return { ...ex, montoTotal: ex.montoTotal || monto };
+      return { id: `v-${d.id}-${derActual.id}`, tipo: "derrama", deptoId: d.id, depto: d.depto, periodoNombre: derActual.titulo, periodoId: periodos[periodos.length - 1]?.id, mes: derActual.mes, anio: derActual.anio, montoTotal: monto, abonos: [], montoPagado: 0, estado: "pendiente", concepto: derActual.titulo };
+    });
+  })() : [];
   const derFiltradas = useMemo(() => derBase.filter(p => {
     const nombre = getNombre(p.deptoId).toLowerCase();
     if (fDer.estado !== "todos" && p.estado !== fDer.estado) return false;
@@ -1386,9 +1395,27 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     }
   };
 
+  const [editMonto, setEditMonto] = useState(null);
+  const [nuevoMonto, setNuevoMonto] = useState("");
+
   const doRevertir = id => {
     setPagos(pagos.map(p => p.id === id ? { ...p, abonos: [], montoPagado: 0, estado: "pendiente" } : p));
     setRevertir(null);
+  };
+
+  const guardarMonto = async () => {
+    if (!nuevoMonto || isNaN(nuevoMonto)) return;
+    const monto = parseFloat(nuevoMonto);
+    const p = editMonto;
+    // Si es pago virtual (derrama sin registro), no podemos editar monto_total directamente
+    // Solo editamos pagos ya existentes en BD
+    if (String(p.id).startsWith('v-')) { alert("Registra primero un abono para poder editar el monto"); return; }
+    await supabase.from('pagos').update({ monto_total: monto }).eq('id', p.id);
+    const estado = p.montoPagado >= monto ? "pagado" : p.montoPagado > 0 ? "parcial" : "pendiente";
+    await supabase.from('pagos').update({ estado }).eq('id', p.id);
+    setPagos(pagos.map(x => x.id === p.id ? { ...x, montoTotal: monto, estado } : x));
+    setEditMonto(null);
+    setNuevoMonto("");
   };
   const estadoBadge = p => {
     const saldo = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
@@ -1396,6 +1423,25 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     if (p.estado === "parcial") return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 transition">💧 Parcial · {fmt(saldo)}</button>;
     return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 transition">⏳ Pendiente →</button>;
   };
+
+  // Modal editar monto
+  const modalEditMonto = editMonto && (
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+        <h3 className="font-bold text-lg">✏️ Editar monto total</h3>
+        <p className="text-sm text-slate-500">Propiedad <strong>{editMonto.depto}</strong></p>
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Monto actual: <strong>{fmt(editMonto.montoTotal)}</strong></label>
+          <input type="number" value={nuevoMonto} onChange={e => setNuevoMonto(e.target.value)}
+            placeholder="Nuevo monto..." className="w-full border rounded-xl px-3 py-2 text-sm" autoFocus />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { setEditMonto(null); setNuevoMonto(""); }} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+          <button onClick={guardarMonto} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
   const pisos = [...new Set(deptos.map(d => d.piso))].sort();
   const ordFilterConfig = [
     { key: "estado", label: "Estado", type: "select", options: [{ value: "pagado", label: "✅ Pagado" }, { value: "parcial", label: "💧 Parcial" }, { value: "pendiente", label: "⏳ Pendiente" }] },
@@ -1411,6 +1457,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const listaBase = tabP === "ordinarios" ? ordBase : derBase;
   return (
     <div className="space-y-4">
+      {modalEditMonto}
       {comprobante && <Comprobante cuota={comprobante.cuota} abono={comprobante.abono} depto={usuarios.find(u => u.deptos?.includes(comprobante.cuota.deptoId))} onClose={() => setComprobante(null)} />}
       {modal && <ModalPago cuota={modal} onClose={() => setModal(null)} onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
       {revertir && <Confirm msg="¿Revertir este pago? Se eliminarán todos los abonos." onYes={() => doRevertir(revertir)} onNo={() => setRevertir(null)} />}
@@ -1480,7 +1527,10 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                   <td className="px-3 py-2.5 font-bold text-indigo-700">{p.depto}</td>
                   <td className="px-3 py-2.5 hidden md:table-cell text-slate-500 text-xs">{getNombre(p.deptoId)}</td>
                   <td className="px-3 py-2.5 hidden lg:table-cell text-slate-400 text-xs">Piso {p.depto?.[0]}</td>
-                  <td className="px-3 py-2.5 text-right hidden md:table-cell font-semibold">{fmt(p.montoTotal)}</td>
+                  <td className="px-3 py-2.5 text-right hidden md:table-cell font-semibold">
+                    {fmt(p.montoTotal)}
+                    {rol !== "lectura" && p.estado !== "pagado" && <button onClick={() => { setEditMonto(p); setNuevoMonto(String(p.montoTotal)); }} className="ml-1 text-slate-300 hover:text-indigo-500 transition-colors text-xs" title="Editar monto">✏️</button>}
+                  </td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">{fmt(p.montoPagado)}</td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
                   <td className="px-3 py-2.5 text-center">{estadoBadge(p)}</td>
@@ -1760,14 +1810,16 @@ const guardar = async () => {
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
 function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y });
+  const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
   const crear = async () => {
     if (!form.titulo || !form.montoTotal) return;
-    const nueva = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), fecha: todayStr(), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, estado: "activa" };
+    if (form.distribucion === "individual" && !form.deptoId) return alert("Selecciona una propiedad");
+    const nueva = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), fecha: todayStr(), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, depto_id: form.distribucion === "individual" ? Number(form.deptoId) : null, estado: "activa" };
     const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
     if (error) { alert("Error al guardar derrama: " + error.message); return; }
     setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
     setShowNew(false);
+    setForm({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
   };
   return (
     <div className="space-y-4">
@@ -1791,10 +1843,20 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
               <div><label className="text-xs text-slate-500 mb-1 block">Año</label><input type="number" value={form.anio} onChange={e => setForm({ ...form, anio: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             </div>
             <div><label className="text-xs text-slate-500 mb-1 block">Distribución</label>
-              <select value={form.distribucion} onChange={e => setForm({ ...form, distribucion: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
-                <option value="igual">Partes iguales</option><option value="coeficiente">Por coeficiente m²</option>
+              <select value={form.distribucion} onChange={e => setForm({ ...form, distribucion: e.target.value, deptoId: "" })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                <option value="igual">Partes iguales</option>
+                <option value="coeficiente">Por coeficiente m²</option>
+                <option value="individual">Propietario específico</option>
               </select>
             </div>
+            {form.distribucion === "individual" && (
+              <div><label className="text-xs text-slate-500 mb-1 block">Propiedad</label>
+                <select value={form.deptoId} onChange={e => setForm({ ...form, deptoId: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
+                  <option value="">— Seleccionar propiedad —</option>
+                  {deptos.map(d => <option key={d.id} value={d.id}>{d.depto}</option>)}
+                </select>
+              </div>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
               <button onClick={crear} className="flex-1 bg-purple-600 text-white py-2 rounded-xl text-sm font-semibold">Crear</button>
@@ -1809,7 +1871,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
               <div>
                 <h3 className="font-bold text-slate-800">{d.titulo}</h3>
                 <p className="text-xs text-slate-500">{d.descripcion} · {d.fecha}</p>
-                <p className="text-xs text-slate-500 mt-0.5">Distribución: <strong>{d.distribucion === "igual" ? "Partes iguales" : "Por m²"}</strong></p>
+                <p className="text-xs text-slate-500 mt-0.5">Distribución: <strong>{d.distribucion === "igual" ? "Partes iguales" : d.distribucion === "individual" ? "🏠 Propietario específico" : "Por m²"}</strong></p>
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-rose-600">{fmt(d.montoTotal)}</p>
