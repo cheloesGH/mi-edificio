@@ -980,7 +980,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
               <div className="flex justify-between items-start">
                 <div>
                   <button onClick={() => setMorDetalle(null)} className="text-xs text-indigo-500 hover:underline mb-1 block">← Volver al listado</button>
-                  <h3 className="font-bold text-lg text-slate-800">Depto {morDetalle.depto}</h3>
+                  <h3 className="font-bold text-lg text-slate-800">{morDetalle.depto}</h3>
                   <p className="text-xs text-slate-400">{morDetalle.propietario} · Desglose de deuda pendiente</p>
                 </div>
                 <button onClick={() => { setMorDetalle(null); setModal(null); }} className="text-slate-300 hover:text-slate-500 text-xl leading-none">✕</button>
@@ -1010,18 +1010,26 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
               ))}
             </div>
             <div className="px-6 pb-4 border-t border-slate-100 pt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-500">Deuda período actual</span>
-                <span className="text-sm font-bold text-rose-500">
-                  {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado" && p.periodoId === morDetalle.periodoId).reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
-                </span>
-              </div>
-              <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                <span className="text-sm font-bold text-slate-700">Total adeudado (todos los períodos)</span>
-                <span className="text-base font-bold text-rose-600">
-                  {fmt(pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}
-                </span>
-              </div>
+              {(() => {
+                const pendientes = pagos.filter(p => p.deptoId === morDetalle.deptoId && p.estado !== "pagado");
+                const totalOrdinario = pendientes.filter(p => p.tipo === "ordinario").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0);
+                const totalDerrama = pendientes.filter(p => p.tipo === "derrama").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0);
+                const totalDeuda = totalOrdinario + totalDerrama;
+                return (<>
+                  {totalOrdinario > 0 && <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-500">Cuotas ordinarias pendientes</span>
+                    <span className="text-sm font-bold text-amber-600">{fmt(totalOrdinario)}</span>
+                  </div>}
+                  {totalDerrama > 0 && <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-500">Derramas pendientes</span>
+                    <span className="text-sm font-bold text-purple-600">{fmt(totalDerrama)}</span>
+                  </div>}
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-2">
+                    <span className="text-sm font-bold text-slate-700">Total adeudado</span>
+                    <span className="text-base font-bold text-rose-600">{fmt(totalDeuda)}</span>
+                  </div>
+                </>);
+              })()}
             </div>
           </div>
         </div>
@@ -1053,12 +1061,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
                   <div className="text-right">
                     <span className={`text-sm font-bold ${r._color || modalData[modal].amountColor}`}>{fmt(modalData[modal].amount(r))}</span>
                     {modal === "morosos" && (
-                      <>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Total: <span className="font-bold text-rose-700">{fmt(pagos.filter(p => p.deptoId === r.deptoId && p.estado !== "pagado").reduce((a, p) => a + (p.montoTotal - p.montoPagado), 0))}</span>
-                        </p>
-                        <p className="text-xs text-indigo-500">Ver desglose →</p>
-                      </>
+                      <p className="text-xs text-indigo-500 mt-0.5">Ver desglose →</p>
                     )}
                   </div>
                 </div>
@@ -1918,7 +1921,7 @@ const guardar = async () => {
 }
 
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
-function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [] }) {
+function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [], periodos = [], pagos = [], setPagos }) {
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
@@ -1961,6 +1964,41 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
       const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
       if (error) { alert("Error al guardar derrama: " + error.message); return; }
       setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
+
+      // ── Opción A: generar pagos automáticamente al crear derrama
+      const totalM2 = deptos.reduce((a, d) => a + (Number(d.m2) || 0), 0);
+      const ultimoPeriodo = periodos[periodos.length - 1];
+      const deptosTarget = payload.distribucion === "individual" && payload.depto_id
+        ? deptos.filter(d => d.id === payload.depto_id)
+        : deptos;
+
+      const nuevosPagos = [];
+      for (const d of deptosTarget) {
+        let monto = Number(payload.monto_total);
+        if (payload.distribucion === "igual") monto = parseFloat((Number(payload.monto_total) / deptos.length).toFixed(2));
+        else if (payload.distribucion === "coeficiente") monto = parseFloat((Number(d.m2) / totalM2 * Number(payload.monto_total)).toFixed(2));
+        const nuevoPago = {
+          tipo: "derrama",
+          depto_id: d.id,
+          depto: d.depto,
+          periodo_id: ultimoPeriodo?.id || null,
+          periodo_nombre: data.titulo,
+          mes: Number(payload.mes),
+          anio: Number(payload.anio),
+          monto_total: monto,
+          monto_pagado: 0,
+          estado: "pendiente",
+          abonos: []
+        };
+        nuevosPagos.push(nuevoPago);
+      }
+      if (nuevosPagos.length > 0) {
+        const pagosNullPeriodo = nuevosPagos.map(p => ({ ...p, periodo_id: null }));
+        const { data: pagosCreados, error: errorPagos } = await supabase.from('pagos').insert(pagosNullPeriodo).select();
+        if (errorPagos) { alert("Error al crear pagos de derrama: " + errorPagos.message); return; }
+        const adaptados = pagosCreados.map(p => ({ ...p, deptoId: p.depto_id, periodoId: null, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] }));
+        setPagos(prev => [...prev, ...adaptados]);
+      }
     }
     setShowNew(false);
   };
@@ -2024,6 +2062,14 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
                 <p className="text-xl font-bold text-rose-600">{fmt(d.montoTotal)}</p>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.estado === "activa" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{d.estado === "activa" ? "🔔 Activa" : "✅ Cerrada"}</span>
                 {rol !== "lectura" && <button onClick={() => abrir(d)} className="text-xs text-slate-400 hover:text-purple-600 transition mt-1">✏️ Editar</button>}
+                {canDelete && <button onClick={async () => {
+                  if (!confirm(`¿Eliminar la derrama "${d.titulo}"? También se eliminarán los pagos asociados.`)) return;
+                  await supabase.from('pagos').delete().eq('periodo_nombre', d.titulo).eq('tipo', 'derrama');
+                  const { error } = await supabase.from('derramas').delete().eq('id', d.id);
+                  if (error) { alert("Error al eliminar: " + error.message); return; }
+                  setDerramas(derramas.filter(x => x.id !== d.id));
+                  setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === d.titulo)));
+                }} className="text-xs text-slate-400 hover:text-rose-600 transition mt-1">🗑 Eliminar</button>}
               </div>
             </div>
           </div>
@@ -3060,7 +3106,7 @@ export default function App() {
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} />}
+          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} />}
           {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} />}
           {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
