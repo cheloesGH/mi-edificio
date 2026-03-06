@@ -2275,19 +2275,22 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
             
             <div>
               <label className="text-xs text-slate-500 mb-1 block">Soporte (foto/imagen)</label>
-              <input type="file" accept="image/*" onChange={e => {
+              <div onClick={() => document.getElementById('egresos-file-input').click()}
+                className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-rose-300 transition-colors">
+                {form.soporte
+                  ? <img src={form.soporte} alt="soporte" className="max-h-24 mx-auto rounded-lg object-contain" />
+                  : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>
+                }
+              </div>
+              <input id="egresos-file-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
                 const f = e.target.files?.[0];
                 if (!f) return;
                 const r = new FileReader();
                 r.onload = ev => setForm({ ...form, soporte: ev.target.result });
                 r.readAsDataURL(f);
-              }} className="w-full text-sm" />
+              }} />
               {form.soporte && (
-                <div className="mt-2 flex items-center gap-2">
-                  <img src={form.soporte} alt="soporte" className="h-14 w-14 object-cover rounded-lg border" />
-                  <a href={form.soporte} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">Ver</a>
-                  <button onClick={() => setForm({ ...form, soporte: null })} className="text-sm text-slate-500 hover:underline">Quitar</button>
-                </div>
+                <button onClick={() => setForm({ ...form, soporte: null })} className="mt-1 text-xs text-slate-400 hover:text-rose-500 transition-colors">✕ Quitar imagen</button>
               )}
             </div>
 <div className="flex gap-2">
