@@ -248,21 +248,67 @@ function Comprobante({ cuota, abono, depto, onClose }) {
 }
 
 // ─── MODAL PAGO ───────────────────────────────────────────────────────────────
-function ModalPago({ cuota, onClose, onConfirm }) {
-  const [monto, setMonto] = useState("");
+function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
+  const saldo = parseFloat((cuota.montoTotal - cuota.montoPagado).toFixed(2));
+  const [monto, setMonto] = useState(String(saldo));
   const [metodo, setMetodo] = useState("Transferencia");
   const [imagen, setImagen] = useState(null);
   const [preview, setPreview] = useState(null);
   const [confirm, setConfirm] = useState(false);
+  const [distribuirModal, setDistribuirModal] = useState(false);
+  const [distribucion, setDistribucion] = useState([]);
   const fileRef = useRef();
-  const saldo = parseFloat((cuota.montoTotal - cuota.montoPagado).toFixed(2));
   const montoN = parseFloat(monto || 0);
-  const err = montoN <= 0 || montoN > saldo;
+  const excedente = parseFloat((montoN - saldo).toFixed(2));
+  const hayExcedente = excedente > 0 && pagosDeuda.length > 0;
+  const err = montoN <= 0;
+
   const handleImg = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => { setImagen(ev.target.result); setPreview(ev.target.result); }; r.readAsDataURL(f); };
-  const submit = () => { onConfirm({ monto: montoN, metodo, imagen }); onClose(); };
+
+  const calcularDistribucion = () => {
+    let restante = parseFloat(excedente.toFixed(2));
+    const dist = [];
+    for (const p of pagosDeuda) {
+      if (restante <= 0) break;
+      const saldoP = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
+      const asignar = parseFloat(Math.min(saldoP, restante).toFixed(2));
+      dist.push({ ...p, asignar });
+      restante = parseFloat((restante - asignar).toFixed(2));
+    }
+    setDistribucion(dist);
+    setDistribuirModal(true);
+  };
+
+  const submit = () => { onConfirm({ monto: Math.min(montoN, saldo), metodo, imagen, distribucion: distribuirModal ? distribucion : [] }); onClose(); };
+
+  if (distribuirModal) return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <h3 className="font-bold text-lg text-slate-800">💰 Distribuir excedente</h3>
+        <p className="text-sm text-slate-500">El pago de <strong>{fmt(montoN)}</strong> cubre esta cuota y sobran <strong className="text-indigo-600">{fmt(excedente)}</strong>. Se distribuirá así:</p>
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs bg-emerald-50 rounded-xl px-3 py-2">
+            <span className="text-slate-600">📅 {cuota.periodoNombre} (esta cuota)</span>
+            <span className="font-bold text-emerald-700">{fmt(saldo)}</span>
+          </div>
+          {distribucion.map((d, i) => (
+            <div key={i} className="flex justify-between text-xs bg-indigo-50 rounded-xl px-3 py-2">
+              <span className="text-slate-600">📅 {d.periodoNombre}</span>
+              <span className="font-bold text-indigo-700">{fmt(d.asignar)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setDistribuirModal(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Volver</button>
+          <button onClick={submit} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">✅ Confirmar distribución</button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      {confirm && <Confirm msg={`¿Confirmar abono de ${fmt(montoN)} para Propiedad ${cuota.depto}?`} onYes={submit} onNo={() => setConfirm(false)} />}
+      {confirm && <Confirm msg={`¿Confirmar abono de ${fmt(Math.min(montoN, saldo))} para Propiedad ${cuota.depto}?`} onYes={submit} onNo={() => setConfirm(false)} />}
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
         <h3 className="font-bold text-lg text-slate-800">Registrar Abono</h3>
         <div className="bg-slate-50 rounded-xl p-3 text-sm space-y-1">
@@ -273,10 +319,18 @@ function ModalPago({ cuota, onClose, onConfirm }) {
           <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-semibold">Saldo</span><span className="font-bold text-amber-600">{fmt(saldo)}</span></div>
         </div>
         <div>
-          <label className="text-xs text-slate-500 mb-1 block">Monto a abonar ($) — máx. {fmt(saldo)}</label>
-          <input type="number" value={monto} min="0.01" max={saldo} step="0.01" onChange={e => setMonto(e.target.value)}
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-xs text-slate-500">Monto a abonar ($)</label>
+            <button onClick={() => setMonto(String(saldo))} className="text-xs text-indigo-500 hover:underline font-semibold">Usar saldo completo {fmt(saldo)}</button>
+          </div>
+          <input type="number" value={monto} min="0.01" step="0.01" onChange={e => setMonto(e.target.value)}
             className={`w-full border rounded-xl px-3 py-2 text-sm ${err && monto ? "border-rose-400" : ""}`} />
-          {err && monto && <p className="text-rose-500 text-xs mt-1">Monto inválido o supera el saldo</p>}
+          {err && monto && <p className="text-rose-500 text-xs mt-1">Monto inválido</p>}
+          {hayExcedente && (
+            <div className="mt-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-xs text-indigo-700">
+              💡 Excedente de <strong>{fmt(excedente)}</strong> — hay {pagosDeuda.length} cuota(s) pendiente(s) de este propietario
+            </div>
+          )}
         </div>
         <div>
           <label className="text-xs text-slate-500 mb-1 block">Método</label>
@@ -303,7 +357,10 @@ function ModalPago({ cuota, onClose, onConfirm }) {
         )}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-          <button onClick={() => !err && monto && setConfirm(true)} disabled={err || !monto} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Registrar</button>
+          {hayExcedente
+            ? <button onClick={() => montoN > 0 && calcularDistribucion()} disabled={!monto || montoN <= 0} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Distribuir →</button>
+            : <button onClick={() => !err && monto && setConfirm(true)} disabled={err || !monto} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Registrar</button>
+          }
         </div>
       </div>
     </div>
@@ -1380,16 +1437,19 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     return true;
   }), [pagos, fDer, derramas]);
 
-  const registrarAbono = async (cuotaId, { monto, metodo, imagen }, isDerrama = false, cuotaVirtual = null) => {
+  const registrarAbono = async (cuotaId, { monto, metodo, imagen, distribucion = [] }, isDerrama = false, cuotaVirtual = null) => {
+    let pagosActualizados = [...pagos];
+
     if (isDerrama) {
-      const ex = pagos.find(p => p.tipo === "derrama" && p.deptoId === cuotaVirtual.deptoId && p.periodoNombre === cuotaVirtual.periodoNombre);
+      const ex = pagosActualizados.find(p => p.tipo === "derrama" && p.deptoId === cuotaVirtual.deptoId && p.periodoNombre === cuotaVirtual.periodoNombre);
       if (ex) {
         const abonos = [...(ex.abonos || []), { id: (ex.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
         const montoPagado = parseFloat((ex.montoPagado + monto).toFixed(2));
         const estado = montoPagado >= ex.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
         await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', ex.id);
         const upd = { ...ex, abonos, montoPagado, estado };
-        setPagos(pagos.map(p => p.id === ex.id ? upd : p));
+        pagosActualizados = pagosActualizados.map(p => p.id === ex.id ? upd : p);
+        setPagos(pagosActualizados);
         setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
       } else {
         const abonos = [{ id: 1, monto, fecha: todayStr(), metodo, imagen }];
@@ -1398,19 +1458,34 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const nuevo = { tipo: "derrama", depto_id: cuotaVirtual.deptoId, depto: cuotaVirtual.depto, periodo_id: cuotaVirtual.periodoId, periodo_nombre: cuotaVirtual.periodoNombre, mes: cuotaVirtual.mes, anio: cuotaVirtual.anio, monto_total: cuotaVirtual.montoTotal, monto_pagado: montoPagado, estado, abonos, concepto: cuotaVirtual.concepto };
         const { data } = await supabase.from('pagos').insert(nuevo).select().single();
         const nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: parseFloat(data.monto_total), montoPagado: parseFloat(data.monto_pagado), abonos: data.abonos || [] };
-        setPagos(p => [...p, nw]);
+        pagosActualizados = [...pagosActualizados, nw];
+        setPagos(pagosActualizados);
         setTimeout(() => setComprobante({ cuota: nw, abono: abonos[0] }), 100);
       }
     } else {
-      const pago = pagos.find(p => p.id === cuotaId);
+      const pago = pagosActualizados.find(p => p.id === cuotaId);
       const abonos = [...(pago.abonos || []), { id: (pago.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
       const montoPagado = parseFloat((pago.montoPagado + monto).toFixed(2));
       const estado = montoPagado >= pago.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
       await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', cuotaId);
       const upd = { ...pago, abonos, montoPagado, estado };
-      setPagos(pagos.map(p => p.id === cuotaId ? upd : p));
+      pagosActualizados = pagosActualizados.map(p => p.id === cuotaId ? upd : p);
       setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
     }
+
+    // ── Distribuir excedente a cuotas pendientes del mismo propietario
+    if (distribucion.length > 0) {
+      for (const d of distribucion) {
+        const p = pagosActualizados.find(x => x.id === d.id);
+        if (!p) continue;
+        const abonos = [...(p.abonos || []), { id: (p.abonos || []).length + 1, monto: d.asignar, fecha: todayStr(), metodo, imagen: null }];
+        const montoPagado = parseFloat((p.montoPagado + d.asignar).toFixed(2));
+        const estado = montoPagado >= p.montoTotal ? "pagado" : "parcial";
+        await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', p.id);
+        pagosActualizados = pagosActualizados.map(x => x.id === p.id ? { ...p, abonos, montoPagado, estado } : x);
+      }
+    }
+    setPagos(pagosActualizados);
   };
 
   const [editMonto, setEditMonto] = useState(null);
@@ -1484,7 +1559,9 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     <div className="space-y-4">
       {modalEditMonto}
       {comprobante && <Comprobante cuota={comprobante.cuota} abono={comprobante.abono} depto={usuarios.find(u => u.deptos?.includes(comprobante.cuota.deptoId))} onClose={() => setComprobante(null)} />}
-      {modal && <ModalPago cuota={modal} onClose={() => setModal(null)} onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
+      {modal && <ModalPago cuota={modal} onClose={() => setModal(null)}
+        pagosDeuda={modal.deptoId ? pagos.filter(p => p.deptoId === modal.deptoId && p.id !== modal.id && p.estado !== "pagado").sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes)) : []}
+        onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
       {revertir && <Confirm msg="¿Revertir este pago? Se eliminarán todos los abonos." onYes={() => doRevertir(revertir)} onNo={() => setRevertir(null)} />}
       <h2 className="text-2xl font-bold text-slate-800">Gestión de Pagos</h2>
       <div className="flex gap-2 border-b border-slate-200">
