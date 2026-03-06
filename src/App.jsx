@@ -1555,7 +1555,10 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                     {fmt(p.montoTotal)}
                     {rol !== "lectura" && <button onClick={() => { setEditMonto(p); setNuevoMonto(String(p.montoTotal)); setNuevoMontoPagado(String(p.montoPagado)); }} className="ml-1 text-slate-300 hover:text-indigo-500 transition-colors text-xs" title="Editar montos">✏️</button>}
                   </td>
-                  <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">{fmt(p.montoPagado)}</td>
+                  <td className="px-3 py-2.5 text-right hidden md:table-cell text-emerald-600">
+                    {fmt(p.montoPagado)}
+                    {rol !== "lectura" && <button onClick={() => { setEditMonto(p); setNuevoMonto(String(p.montoTotal)); setNuevoMontoPagado(String(p.montoPagado)); }} className="ml-1 text-slate-300 hover:text-emerald-500 transition-colors text-xs" title="Editar monto pagado">✏️</button>}
+                  </td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
                   <td className="px-3 py-2.5 text-center">{estadoBadge(p)}</td>
                   <td className="px-3 py-2.5 text-center">{lastAbono?.imagen ? <button onClick={() => setImgView(lastAbono.imagen)} title="Ver soporte" className="text-slate-500 hover:text-slate-800 hover:scale-125 transition-transform cursor-pointer text-lg">📷</button> : <span className="text-slate-200 select-none"> </span>}</td>
