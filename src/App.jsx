@@ -1,6 +1,24 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { supabaseAdmin } from "./supabaseAdmin";
+
+// ── Edge Function helper para operaciones admin seguras
+const adminUsers = async (action, params) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(
+    "https://sunavnqxgaofszbnqrmg.supabase.co/functions/v1/hyper-responder",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token}`
+      },
+      body: JSON.stringify({ action, ...params })
+    }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Error en operación admin");
+  return data;
+};
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -1808,7 +1826,7 @@ const guardar = async () => {
 }
 
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
-function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
+function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [] }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
   const crear = async () => {
@@ -1850,10 +1868,13 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false }) {
               </select>
             </div>
             {form.distribucion === "individual" && (
-              <div><label className="text-xs text-slate-500 mb-1 block">Propiedad</label>
+              <div><label className="text-xs text-slate-500 mb-1 block">Propietario / Propiedad</label>
                 <select value={form.deptoId} onChange={e => setForm({ ...form, deptoId: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
-                  <option value="">— Seleccionar propiedad —</option>
-                  {deptos.map(d => <option key={d.id} value={d.id}>{d.depto}</option>)}
+                  <option value="">— Seleccionar —</option>
+                  {deptos.map(d => {
+                    const owner = usuarios?.find(u => u.rol === "prop" && u.deptos?.includes(d.id));
+                    return <option key={d.id} value={d.id}>{d.depto}{owner ? ` — ${owner.nombre}` : ""}</option>;
+                  })}
                 </select>
               </div>
             )}
@@ -2367,20 +2388,21 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
       // Si cambió la contraseña, actualizar en Supabase Auth
       const uActual = usuarios.find(u => u.id === editId);
       if (uActual?.auth_id && form.pass !== uActual.pass) {
-        await supabaseAdmin.auth.admin.updateUserById(uActual.auth_id, { password: form.pass });
+        try { await adminUsers("update", { auth_id: uActual.auth_id, password: form.pass }); } catch {}
       }
       setUsuarios(usuarios.map(u => u.id === editId ? { ...u, ...payload, user: payload.usuario } : u));
       if (editId === usuarioActivo?.id) setUsuario({ ...usuarioActivo, ...payload, user: payload.usuario });
     } else {
-      // 1. Crear en Supabase Auth
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: form.email, password: form.pass, email_confirm: true
-      });
-      if (authError) { alert("Error al crear usuario en Auth: " + authError.message); return; }
+      // 1. Crear en Supabase Auth via Edge Function
+      let authId;
+      try {
+        const authData = await adminUsers("create", { email: form.email, password: form.pass });
+        authId = authData.id;
+      } catch (e) { alert("Error al crear usuario: " + e.message); return; }
       // 2. Crear en tabla usuarios con auth_id
-      const { data, error } = await supabase.from('usuarios').insert({ ...payload, auth_id: authData.user.id }).select().single();
+      const { data, error } = await supabase.from('usuarios').insert({ ...payload, auth_id: authId }).select().single();
       if (error) {
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id); // revertir
+        try { await adminUsers("delete", { auth_id: authId }); } catch {}
         alert("Error al crear usuario: " + error.message); return;
       }
       setUsuarios([...usuarios, { ...data, user: data.usuario, deptos: data.deptos || [], modulos: data.modulos || [], permisos: data.permisos || {} }]);
@@ -2393,8 +2415,10 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
     // 1. Eliminar de tabla usuarios
     const { error } = await supabase.from('usuarios').delete().eq('id', u.id);
     if (error) { alert("Error al eliminar: " + error.message); return; }
-    // 2. Eliminar de Supabase Auth
-    if (u.auth_id) await supabaseAdmin.auth.admin.deleteUser(u.auth_id);
+    // 2. Eliminar de Supabase Auth via Edge Function
+    if (u.auth_id) {
+      try { await adminUsers("delete", { auth_id: u.auth_id }); } catch {}
+    }
     setUsuarios(usuarios.filter(x => x.id !== u.id));
   };
 
@@ -2800,7 +2824,7 @@ export default function App() {
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} />}
+          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} />}
           {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} />}
           {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
