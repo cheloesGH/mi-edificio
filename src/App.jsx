@@ -910,7 +910,7 @@ function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTa
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
   const [showInforme, setShowInforme] = useState(false);
 
-    const ult3 = periodos.slice(-3).reverse();
+    const ult3 = [...periodos].sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes).slice(-3).reverse();
 const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.length - 1];
   const cuotas = pagos.filter(p => p.periodoId === per?.id && p.tipo === "ordinario");
 
@@ -1386,8 +1386,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const [fDer, setFDer] = useState({ derrama: derramas[0]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
   const ult3Periodos = useMemo(() => {
     const arr = Array.isArray(periodos) ? [...periodos] : [];
-    // Ordenar por id ascendente y tomar los 3 últimos (más recientes)
-    arr.sort((a, b) => (a?.id || 0) - (b?.id || 0));
+    arr.sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
     return arr.slice(-3).reverse();
   }, [periodos]);
 
@@ -2845,7 +2844,7 @@ export default function App() {
       supabase.from('otros_ingresos').select('*').order('id')
     ]);
     const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
-    const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo }));
+    const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo })).sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
     const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] }));
     const usuariosAdap = (dataUsuarios || []).map(u => ({ ...u, pass: u.pass, user: u.usuario, deptos: u.deptos || [] }));
     setDeptos(deptosAdap);
