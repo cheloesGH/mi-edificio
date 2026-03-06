@@ -2830,6 +2830,19 @@ export default function App() {
       }
     };
     init();
+
+    // Listener para renovar sesión automáticamente cuando el token expira
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'TOKEN_REFRESHED') {
+        // Token renovado automáticamente — no hacer nada, la sesión sigue activa
+        console.log('Token renovado');
+      }
+      if (event === 'SIGNED_OUT') {
+        setUsuario(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const cargarDatos = async () => {
