@@ -930,6 +930,19 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
   const pagosCobrados = cuotas.filter(p => p.estado === "pagado");
   const pagosPendientes = cuotas.filter(p => p.estado !== "pagado");
 
+  // Calcular remanente acumulado por período
+  const periodosSorted = [...periodos].sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
+  let acum = 0;
+  const periodosConAcumulado = periodosSorted.map(pr => {
+    const ing = pagos.filter(p => p.periodoId === pr.id && p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
+    const otrosIng = otrosIngresos.filter(o => o.mes === pr.mes && o.anio === pr.anio).reduce((a, o) => a + o.monto, 0);
+    const egr = egresos.filter(e => e.mes === pr.mes && e.anio === pr.anio).reduce((a, e) => a + e.monto, 0);
+    const remanente = parseFloat((ing + otrosIng - egr).toFixed(2));
+    acum = parseFloat((acum + remanente).toFixed(2));
+    return { ...pr, ingCobrado: ing, otrosIng, egr, remanente, acumulado: acum };
+  });
+  const fondoAcumulado = periodosConAcumulado.length > 0 ? periodosConAcumulado[periodosConAcumulado.length - 1].acumulado : 0;
+
   const barData = periodos.map(pr => {
     const ing = pagos.filter(p => p.periodoId === pr.id && p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
     const egr = egresos.filter(e => e.mes === pr.mes && e.anio === pr.anio).reduce((a, e) => a + e.monto, 0);
@@ -949,6 +962,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
     { l: "Pendientes", v: fmt(pendMes), icon: "⏳", iconBg: "bg-amber-500", key: "pendientes" },
     { l: "En Mora", v: `${morososList.length}`, icon: "⚠️", iconBg: "bg-rose-600", key: "morosos" },
     { l: "Flujo Neto", v: fmt(ingTotal - egrMes), icon: "↕️", iconBg: "bg-indigo-600", key: "flujo", informe: true },
+    { l: "Fondo Acumulado", v: fmt(fondoAcumulado), icon: "🏦", iconBg: fondoAcumulado >= 0 ? "bg-teal-600" : "bg-rose-700", key: "fondo_nav" },
     { l: "Derramas Activas", v: `${derramas.filter(d => d.estado === "activa").length}`, icon: "🔔", iconBg: "bg-purple-600", key: "derramas_nav" },
   ];
 
@@ -1118,14 +1132,15 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {cards.map(c => (
           <div key={c.l}
-            onClick={() => { if (c.key === "derramas_nav") setTab("derramas"); else if (c.key) setModal(c.key); }}
+            onClick={() => { if (c.key === "derramas_nav") setTab("derramas"); else if (c.key === "fondo_nav") setTab("periodos"); else if (c.key) setModal(c.key); }}
             className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-4 lg:p-5 flex items-start justify-between transition-all duration-200 ${c.key ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{c.l}</p>
               <p className="text-xl lg:text-2xl font-bold text-slate-800 mt-1.5 truncate">{c.v}</p>
               {c.sub1 && <p className="text-xs text-slate-400 mt-1 leading-tight">{c.sub1}</p>}
               {c.sub2 && <p className="text-xs text-emerald-500 font-semibold leading-tight">{c.sub2}</p>}
-              {c.key && !c.sub1 && <p className="text-xs text-indigo-500 mt-1.5 font-medium hidden sm:block">Clic para ver detalle</p>}
+              {c.key && !c.sub1 && !c.key.endsWith("_nav") && <p className="text-xs text-indigo-500 mt-1.5 font-medium hidden sm:block">Clic para ver detalle</p>}
+              {c.key === "fondo_nav" && <p className="text-xs text-teal-600 mt-1.5 font-medium hidden sm:block">Ver detalle en Períodos →</p>}
               {c.informe && <button onClick={e => { e.stopPropagation(); setShowInforme(true); }} className="text-xs text-indigo-500 hover:underline mt-1 font-semibold">📋 Ver informe →</button>}
             </div>
             <div className={`w-10 h-10 lg:w-11 lg:h-11 rounded-xl flex items-center justify-center text-lg flex-shrink-0 shadow-lg ${c.iconBg}`}>
@@ -1233,6 +1248,19 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
 
 // ─── PERIODOS ────────────────────────────────────────────────────────────────
 function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
+  // Calcular acumulado por período
+  const periodosSorted = useMemo(() => [...periodos].sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes), [periodos]);
+  const periodosConAcumulado = useMemo(() => {
+    let acum = 0;
+    return periodosSorted.map(pr => {
+      const ing = pagos.filter(p => p.periodoId === pr.id && p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
+      const egr = egresos.filter(e => e.mes === pr.mes && e.anio === pr.anio).reduce((a, e) => a + e.monto, 0);
+      const remanente = parseFloat((ing - egr).toFixed(2));
+      acum = parseFloat((acum + remanente).toFixed(2));
+      return { id: pr.id, remanente, acumulado: acum };
+    });
+  }, [periodosSorted, pagos, egresos]);
+
   const [showNew, setShowNew] = useState(false);
   const [confirmCierre, setConfirmCierre] = useState(null);
   const [form, setForm] = useState({ mes: today.m, anio: today.y, presupuesto: "", metodoPeriodo: "coeficiente" });
@@ -1351,7 +1379,7 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
         </div>
       )}
       <div className="space-y-3">
-        {[...periodos].reverse().map(p => {
+        {[...periodosSorted].reverse().map(p => {
           const cuotas = pagos.filter(x => x.periodoId === p.id);
           const cobrado = cuotas.filter(x => x.estado === "pagado").reduce((a, x) => a + x.montoPagado, 0);
           const total = cuotas.reduce((a, x) => a + x.montoTotal, 0);
@@ -1369,13 +1397,27 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
                   {p.estado === "abierto" ? "🟢 Abierto — clic para cerrar" : "🔒 Cerrado — clic para abrir"}
                 </button>
               </div>
-              <div className="flex gap-4 text-sm flex-wrap mb-2">
-                <span className="text-emerald-600 font-semibold">Cobrado: {fmt(cobrado)}</span>
-                <span className="text-amber-600">Pendiente: {fmt(total - cobrado)}</span>
-                <span className="text-slate-400">{cuotas.filter(x => x.estado === "pagado").length}/{cuotas.length} propiedades</span>
-              </div>
-              <div className="bg-slate-100 rounded-full h-2"><div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${pct}%` }} /></div>
-              <p className="text-xs text-slate-400 mt-1">{pct}% cobrado</p>
+              {(() => {
+                const egr = egresos.filter(e => e.mes === p.mes && e.anio === p.anio).reduce((a, e) => a + e.monto, 0);
+                const remanente = parseFloat((cobrado - egr).toFixed(2));
+                // Acumulado hasta este período
+                const idx = periodosSorted.findIndex(x => x.id === p.id);
+                const acumHasta = idx >= 0 && periodosConAcumulado[idx] ? periodosConAcumulado[idx].acumulado : 0;
+                return (
+                  <>
+                    <div className="flex gap-4 text-sm flex-wrap mb-2">
+                      <span className="text-emerald-600 font-semibold">Cobrado: {fmt(cobrado)}</span>
+                      <span className="text-rose-500">Egresos: {fmt(egr)}</span>
+                      <span className={`font-semibold ${remanente >= 0 ? "text-teal-600" : "text-rose-600"}`}>Remanente: {fmt(remanente)}</span>
+                      <span className={`font-bold ${acumHasta >= 0 ? "text-teal-700" : "text-rose-700"}`}>Acumulado: {fmt(acumHasta)}</span>
+                      <span className="text-amber-600">Pendiente: {fmt(total - cobrado)}</span>
+                      <span className="text-slate-400">{cuotas.filter(x => x.estado === "pagado").length}/{cuotas.length} propiedades</span>
+                    </div>
+                    <div className="bg-slate-100 rounded-full h-2"><div className="bg-indigo-500 h-2 rounded-full" style={{ width: `${pct}%` }} /></div>
+                    <p className="text-xs text-slate-400 mt-1">{pct}% cobrado</p>
+                  </>
+                );
+              })()}
             </div>
           );
         })}
@@ -1390,6 +1432,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   const [modal, setModal] = useState(null);
   const [comprobante, setComprobante] = useState(null);
   const [imgView, setImgView] = useState(null);
+  const [editImagen, setEditImagen] = useState(null); // { id, tipo } para editar imagen de pago
   const [revertir, setRevertir] = useState(null);
   const [fOrd, setFOrd] = useState({ periodo: periodos[periodos.length - 1]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
   const [fDer, setFDer] = useState({ derrama: derramas[0]?.id || 1, estado: "todos", propietario: "", propiedad: "", piso: "todos", metodo: "todos" });
@@ -1567,6 +1610,45 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
     <div className="space-y-4">
       {modalEditMonto}
       {comprobante && <Comprobante cuota={comprobante.cuota} abono={comprobante.abono} depto={usuarios.find(u => u.deptos?.includes(comprobante.cuota.deptoId))} onClose={() => setComprobante(null)} />}
+      {/* ── Modal ver imagen ── */}
+      {imgView && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
+          <div className="relative max-w-lg w-full">
+            <button onClick={() => setImgView(null)} className="absolute -top-8 right-0 text-white text-2xl hover:text-slate-300">✕</button>
+            <img src={imgView} alt="soporte" className="w-full rounded-2xl shadow-2xl object-contain max-h-[80vh]" />
+          </div>
+        </div>
+      )}
+      {/* ── Modal editar imagen pago ── */}
+      {editImagen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <h3 className="font-bold text-lg">📷 Editar imagen soporte</h3>
+            <div onClick={() => document.getElementById('edit-img-input').click()}
+              className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300 transition-colors">
+              {editImagen.preview
+                ? <img src={editImagen.preview} alt="soporte" className="max-h-32 mx-auto rounded-lg object-contain" />
+                : <div className="text-slate-400 text-sm py-4">📎 Seleccionar nueva imagen</div>}
+            </div>
+            <input id="edit-img-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+              const f = e.target.files[0]; if (!f) return;
+              const r = new FileReader(); r.onload = ev => setEditImagen({ ...editImagen, preview: ev.target.result }); r.readAsDataURL(f);
+            }} />
+            {editImagen.preview && <button onClick={() => setEditImagen({ ...editImagen, preview: null })} className="text-xs text-rose-500 hover:underline">✕ Quitar imagen</button>}
+            <div className="flex gap-2">
+              <button onClick={() => setEditImagen(null)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
+              <button onClick={async () => {
+                const pago = pagos.find(p => p.id === editImagen.id);
+                if (!pago) return;
+                const abonos = (pago.abonos || []).map((a, i) => i === pago.abonos.length - 1 ? { ...a, imagen: editImagen.preview } : a);
+                await supabase.from('pagos').update({ abonos }).eq('id', editImagen.id);
+                setPagos(pagos.map(p => p.id === editImagen.id ? { ...p, abonos } : p));
+                setEditImagen(null);
+              }} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal && <ModalPago cuota={modal} onClose={() => setModal(null)}
         pagosDeuda={modal.deptoId ? pagos.filter(p => p.deptoId === modal.deptoId && p.id !== modal.id && p.estado !== "pagado").sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes)) : []}
         onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
@@ -1647,7 +1729,14 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
                   </td>
                   <td className="px-3 py-2.5 text-right hidden md:table-cell text-amber-600 font-semibold">{p.estado !== "pagado" ? fmt(p.montoTotal - p.montoPagado) : "-"}</td>
                   <td className="px-3 py-2.5 text-center">{estadoBadge(p)}</td>
-                  <td className="px-3 py-2.5 text-center">{lastAbono?.imagen ? <button onClick={() => setImgView(lastAbono.imagen)} title="Ver soporte" className="text-slate-500 hover:text-slate-800 hover:scale-125 transition-transform cursor-pointer text-lg">📷</button> : <span className="text-slate-200 select-none"> </span>}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    {lastAbono?.imagen && (
+                      <span className="flex items-center justify-center gap-1">
+                        <button onClick={() => setImgView(lastAbono.imagen)} title="Ver soporte" className="text-slate-500 hover:text-slate-800 hover:scale-125 transition-transform cursor-pointer text-lg">📷</button>
+                        {rol !== "lectura" && <button onClick={() => setEditImagen({ id: p.id, preview: lastAbono.imagen })} title="Editar imagen" className="text-xs text-slate-300 hover:text-indigo-500 transition">✏️</button>}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-center">{lastAbono ? <button onClick={() => setComprobante({ cuota: p, abono: lastAbono })} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button> : <span className="text-slate-300 text-lg cursor-not-allowed" title="Sin pagos registrados">🧾</span>}</td>
                 </tr>
               );
@@ -2058,18 +2147,20 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
                 <p className="text-xs text-slate-500">{d.descripcion} · {d.fecha}</p>
                 <p className="text-xs text-slate-500 mt-0.5">Distribución: <strong>{d.distribucion === "igual" ? "Partes iguales" : d.distribucion === "individual" ? "🏠 Propietario específico" : "Por m²"}</strong></p>
               </div>
-              <div className="text-right flex flex-col items-end gap-1">
+              <div className="flex flex-col items-end gap-1 min-w-[100px]">
                 <p className="text-xl font-bold text-rose-600">{fmt(d.montoTotal)}</p>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.estado === "activa" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{d.estado === "activa" ? "🔔 Activa" : "✅ Cerrada"}</span>
-                {rol !== "lectura" && <button onClick={() => abrir(d)} className="text-xs text-slate-400 hover:text-purple-600 transition mt-1">✏️ Editar</button>}
-                {canDelete && <button onClick={async () => {
-                  if (!confirm(`¿Eliminar la derrama "${d.titulo}"? También se eliminarán los pagos asociados.`)) return;
-                  await supabase.from('pagos').delete().eq('periodo_nombre', d.titulo).eq('tipo', 'derrama');
-                  const { error } = await supabase.from('derramas').delete().eq('id', d.id);
-                  if (error) { alert("Error al eliminar: " + error.message); return; }
-                  setDerramas(derramas.filter(x => x.id !== d.id));
-                  setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === d.titulo)));
-                }} className="text-xs text-slate-400 hover:text-rose-600 transition mt-1">🗑 Eliminar</button>}
+                <div className="flex gap-3 mt-1">
+                  {rol !== "lectura" && <button onClick={() => abrir(d)} className="text-xs text-slate-400 hover:text-purple-600 transition">✏️ Editar</button>}
+                  {canDelete && <button onClick={async () => {
+                    if (!confirm(`¿Eliminar la derrama "${d.titulo}"? También se eliminarán los pagos asociados.`)) return;
+                    await supabase.from('pagos').delete().eq('periodo_nombre', d.titulo).eq('tipo', 'derrama');
+                    const { error } = await supabase.from('derramas').delete().eq('id', d.id);
+                    if (error) { alert("Error al eliminar: " + error.message); return; }
+                    setDerramas(derramas.filter(x => x.id !== d.id));
+                    setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === d.titulo)));
+                  }} className="text-xs text-slate-400 hover:text-rose-600 transition">🗑 Eliminar</button>}
+                </div>
               </div>
             </div>
           </div>
@@ -2085,9 +2176,14 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
   const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
+  const [perSelected, setPerSelected] = useState(lastPer?.id ?? null);
   const [showNew, setShowNew] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [comprobante, setComprobante] = useState(null);
-  const [form, setForm] = useState({ concepto: "", cat: "Arriendo Local", monto: "", pagador_nombre: "", pagador_tipo: "externo", pagador_id: null, detalle: "" });
+  const [imgView, setImgView] = useState(null);
+  const emptyForm = { concepto: "", cat: "Arriendo Local", monto: "", pagador_nombre: "", pagador_tipo: "externo", pagador_id: null, detalle: "", periodoId: lastPer?.id ?? null, mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, soporte: null };
+  const [form, setForm] = useState(emptyForm);
+  const ult3Periodos = useMemo(() => [...periodos].sort((a,b) => a.anio !== b.anio ? a.anio-b.anio : a.mes-b.mes).slice(-3).reverse(), [periodos]);
 
   const filterConfig = [
     { key: "mes", label: "Mes", type: "select", options: MESES.map((m, i) => ({ value: String(i), label: m })) },
@@ -2106,22 +2202,41 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
 
   const total = filtrados.reduce((a, i) => a + i.monto, 0);
 
+  const abrirOI = (i = null) => {
+    if (i) {
+      setEditId(i.id);
+      const per = periodos.find(p => p.mes === i.mes && p.anio === i.anio);
+      setForm({ concepto: i.concepto, cat: i.cat || i.categoria, monto: String(i.monto), pagador_nombre: i.pagador_nombre, pagador_tipo: i.pagador_tipo || "externo", pagador_id: i.pagador_id || null, detalle: i.detalle || "", periodoId: per?.id ?? null, mes: i.mes, anio: i.anio, soporte: i.soporte || null });
+    } else {
+      setEditId(null);
+      setForm(emptyForm);
+    }
+    setShowNew(true);
+  };
+
   const agregar = async () => {
     if (!form.concepto || !form.monto || !form.pagador_nombre) return alert("Completa concepto, monto y pagador");
-    const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
-    const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
+    const mes = form.mes;
+    const anio = form.anio;
     const fecha = `${String(today.d).padStart(2,"0")}/${String(mes+1).padStart(2,"0")}/${anio}`;
-    const nuevo = {
+    const payload = {
       concepto: form.concepto, categoria: form.cat, monto: Number(form.monto),
       mes, anio, fecha, pagador_nombre: form.pagador_nombre,
       pagador_tipo: form.pagador_tipo, pagador_id: form.pagador_id || null,
-      detalle: form.detalle || null
+      detalle: form.detalle || null, soporte: form.soporte || null
     };
-    const { data, error } = await supabase.from('otros_ingresos').insert(nuevo).select().single();
-    if (error) { alert("Error al guardar: " + error.message); return; }
-    setOtrosIngresos([...otrosIngresos, { ...data, cat: data.categoria }]);
+    if (editId) {
+      const { error } = await supabase.from('otros_ingresos').update(payload).eq('id', editId);
+      if (error) { alert("Error al actualizar: " + error.message); return; }
+      setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
+    } else {
+      const { data, error } = await supabase.from('otros_ingresos').insert(payload).select().single();
+      if (error) { alert("Error al guardar: " + error.message); return; }
+      setOtrosIngresos([...otrosIngresos, { ...data, cat: data.categoria }]);
+    }
     setShowNew(false);
-    setForm({ concepto: "", cat: "Arriendo Local", monto: "", pagador_nombre: "", pagador_tipo: "externo", pagador_id: null, detalle: "" });
+    setEditId(null);
+    setForm(emptyForm);
   };
 
   const eliminar = async (id) => {
@@ -2137,9 +2252,32 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
   return (
     <div className="space-y-4">
       {comprobante && <ComprobanteOI ingreso={comprobante} onClose={() => setComprobante(null)} />}
+      {imgView && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
+          <div className="relative max-w-lg w-full">
+            <button onClick={() => setImgView(null)} className="absolute -top-8 right-0 text-white text-2xl hover:text-slate-300">✕</button>
+            <img src={imgView} alt="soporte" className="w-full rounded-2xl shadow-2xl object-contain max-h-[80vh]" />
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Otros Ingresos</h2>
-        {rol !== "lectura" && <button onClick={() => setShowNew(true)} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600">+ Registrar</button>}
+        {rol !== "lectura" && <button onClick={() => abrirOI()} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-600">+ Registrar</button>}
+      </div>
+      {/* Selector de períodos */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <select value={perSelected ?? ""} onChange={e => {
+          const p = periodos.find(x => x.id === Number(e.target.value));
+          if (p) { setPerSelected(p.id); setFilters(f => ({ ...f, mes: p.mes, anio: p.anio })); }
+        }} className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm text-slate-700 bg-white">
+          {[...periodos].sort((a,b) => a.anio!==b.anio?a.anio-b.anio:a.mes-b.mes).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+        {ult3Periodos.map(p => (
+          <button key={p.id} onClick={() => { setPerSelected(p.id); setFilters(f => ({ ...f, mes: p.mes, anio: p.anio })); }}
+            className={`px-3 py-1.5 rounded-xl text-sm font-semibold border transition ${perSelected === p.id ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:border-emerald-400"}`}>
+            {p.nombre}
+          </button>
+        ))}
       </div>
 
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={() => setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" })} />
@@ -2162,7 +2300,15 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-bold text-lg">Registrar Ingreso</h3>
+            <h3 className="font-bold text-lg">{editId ? "✏️ Editar Ingreso" : "Registrar Ingreso"}</h3>
+            <div><label className="text-xs text-slate-500 mb-1 block">Período</label>
+              <select value={form.periodoId ?? ""} onChange={e => {
+                const p = periodos.find(x => x.id === Number(e.target.value));
+                if (p) setForm({ ...form, periodoId: p.id, mes: p.mes, anio: p.anio });
+              }} className="w-full border rounded-xl px-3 py-2 text-sm">
+                {[...periodos].sort((a,b) => a.anio!==b.anio?a.anio-b.anio:a.mes-b.mes).map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
             <div><label className="text-xs text-slate-500 mb-1 block">Categoría</label>
               <select value={form.cat} onChange={e => setForm({ ...form, cat: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm">
                 {CATS_OI.map(c => <option key={c}>{c}</option>)}
@@ -2200,6 +2346,20 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
                 <input value={form.pagador_nombre} onChange={e => setForm({ ...form, pagador_nombre: e.target.value })} placeholder="Nombre completo..." className="w-full border rounded-xl px-3 py-2 text-sm" />
               </div>
             )}
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Soporte (foto/imagen)</label>
+              <div onClick={() => document.getElementById('oi-file-input').click()}
+                className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-emerald-300 transition-colors">
+                {form.soporte
+                  ? <img src={form.soporte} alt="soporte" className="max-h-24 mx-auto rounded-lg object-contain" />
+                  : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>}
+              </div>
+              <input id="oi-file-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+                const f = e.target.files[0]; if (!f) return;
+                const r = new FileReader(); r.onload = ev => setForm(fm => ({ ...fm, soporte: ev.target.result })); r.readAsDataURL(f);
+              }} />
+              {form.soporte && <button onClick={() => setForm(fm => ({ ...fm, soporte: null }))} className="text-xs text-rose-500 hover:underline mt-1">✕ Quitar imagen</button>}
+            </div>
             <div className="flex gap-2 pt-1">
               <button onClick={() => setShowNew(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
               <button onClick={agregar} className="flex-1 bg-emerald-500 text-white py-2 rounded-xl text-sm font-semibold">💾 Guardar</button>
@@ -2218,12 +2378,13 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
               <th className="px-3 py-3 text-left hidden md:table-cell">Pagador</th>
               <th className="px-3 py-3 text-left hidden lg:table-cell">Fecha</th>
               <th className="px-3 py-3 text-right">Monto</th>
+              <th className="px-3 py-3 text-center">📷</th>
               <th className="px-3 py-3 text-center">🧾</th>
-              {canDelete && <th className="px-3 py-3 text-center">Acc.</th>}
+              <th className="px-3 py-3 text-center">Acc.</th>
             </tr>
           </thead>
           <tbody>
-            {filtrados.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Sin ingresos registrados</td></tr>}
+            {filtrados.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">Sin ingresos registrados</td></tr>}
             {filtrados.map(i => (
               <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-2.5 font-medium text-slate-700">
@@ -2240,13 +2401,15 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
                 <td className="px-3 py-2.5 hidden lg:table-cell text-slate-400 text-xs">{i.fecha}</td>
                 <td className="px-3 py-2.5 text-right font-bold text-emerald-600">{fmt(i.monto)}</td>
                 <td className="px-3 py-2.5 text-center">
+                  {i.soporte && <button onClick={() => setImgView(i.soporte)} title="Ver soporte" className="text-slate-500 hover:text-slate-800 hover:scale-125 transition-transform cursor-pointer text-lg">📷</button>}
+                </td>
+                <td className="px-3 py-2.5 text-center">
                   <button onClick={() => setComprobante(i)} title="Ver comprobante" className="text-indigo-400 hover:text-indigo-600 hover:scale-125 transition-transform cursor-pointer text-lg">🧾</button>
                 </td>
-                {canDelete && (
-                  <td className="px-3 py-2.5 text-center">
-                    <button onClick={() => eliminar(i.id)} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg" title="Eliminar">🗑</button>
-                  </td>
-                )}
+                <td className="px-3 py-2.5 text-center">
+                  {rol !== "lectura" && <button onClick={() => abrirOI(i)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all cursor-pointer text-lg mr-1" title="Editar">✏️</button>}
+                  {canDelete && <button onClick={() => eliminar(i.id)} className="text-slate-300 hover:text-rose-600 hover:scale-125 transition-all cursor-pointer text-lg" title="Eliminar">🗑</button>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -2381,20 +2544,26 @@ function ComprobanteOI({ ingreso, onClose }) {
 
 // ─── EGRESOS ──────────────────────────────────────────────────────────────────
 function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false }) {
-  const lastPer = periodos[periodos.length - 1];
+  const periodosSorted = useMemo(() => [...periodos].sort((a,b) => a.anio !== b.anio ? a.anio-b.anio : a.mes-b.mes), [periodos]);
+  const lastPer = periodosSorted[periodosSorted.length - 1];
+  const ult3 = useMemo(() => [...periodosSorted].reverse().slice(0, 3), [periodosSorted]);
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
+  const [perSelected, setPerSelected] = useState(lastPer?.id ?? null);
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
+  const [imgView, setImgView] = useState(null);
+  const emptyForm = { concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null, periodoId: lastPer?.id ?? null, mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y };
+  const [form, setForm] = useState(emptyForm);
   const CATS = ["Mantenimiento", "Servicios", "Personal", "Administrativo", "Imprevistos"];
 
   const abrir = (e = null) => {
     if (e) {
       setEditId(e.id);
-      setForm({ concepto: e.concepto, cat: e.cat, monto: String(e.monto), detalle: e.detalle || "", soporte: e.soporte || null });
+      const per = periodosSorted.find(p => p.mes === e.mes && p.anio === e.anio);
+      setForm({ concepto: e.concepto, cat: e.cat, monto: String(e.monto), detalle: e.detalle || "", soporte: e.soporte || null, periodoId: per?.id ?? null, mes: e.mes, anio: e.anio });
     } else {
       setEditId(null);
-      setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
+      setForm(emptyForm);
     }
     setShowNew(true);
   };
@@ -2416,16 +2585,16 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
   const catData = Object.entries(cats).map(([name, value]) => ({ name, value }));
   const agregar = async () => {
     if (!form.concepto || !form.monto) return;
-    const mes = filters.mes !== "todos" ? Number(filters.mes) : today.m;
-    const anio = filters.anio !== "todos" ? Number(filters.anio) : today.y;
+    const mes = form.mes;
+    const anio = form.anio;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
     const payload = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), detalle: form.detalle || null, soporte: form.soporte || null };
     if (editId) {
-      const { error } = await supabase.from('egresos').update(payload).eq('id', editId);
+      const fullPayload = { ...payload, mes, anio, fecha };
+      const { error } = await supabase.from('egresos').update(fullPayload).eq('id', editId);
       if (error) { alert("Error al actualizar: " + error.message); return; }
-      setEgresos(egresos.map(e => e.id === editId ? { ...e, ...payload } : e));
+      setEgresos(egresos.map(e => e.id === editId ? { ...e, ...fullPayload } : e));
     } else {
-      // Validar concepto duplicado en el mismo período
       const duplicado = egresos.find(e => e.concepto.trim().toLowerCase() === form.concepto.trim().toLowerCase() && e.mes === mes && e.anio === anio);
       if (duplicado) { alert(`Ya existe un egreso con el concepto "${form.concepto}" en este período.`); return; }
       const nuevo = { ...payload, mes, anio, fecha };
@@ -2435,22 +2604,52 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
     }
     setShowNew(false);
     setEditId(null);
-    setForm({ concepto: "", cat: "Mantenimiento", monto: "", detalle: "", soporte: null });
+    setForm(emptyForm);
   };
-  const clearFilters = () => setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" });
+  const clearFilters = () => { setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" }); setPerSelected(lastPer?.id ?? null); };
   return (
     <div className="space-y-4">
+      {imgView && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
+          <div className="relative max-w-lg w-full">
+            <button onClick={() => setImgView(null)} className="absolute -top-8 right-0 text-white text-2xl hover:text-slate-300">✕</button>
+            <img src={imgView} alt="soporte" className="w-full rounded-2xl shadow-2xl object-contain max-h-[80vh]" />
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Egresos del Edificio</h2>
         {rol !== "lectura" && <button onClick={() => abrir()} className="bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-rose-600">+ Agregar</button>}
       </div>
-      
+      {/* Selector de períodos */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <select value={perSelected ?? ""} onChange={e => {
+          const p = periodosSorted.find(x => x.id === Number(e.target.value));
+          if (p) { setPerSelected(p.id); setFilters(f => ({ ...f, mes: p.mes, anio: p.anio })); }
+        }} className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm text-slate-700 bg-white">
+          {periodosSorted.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+        </select>
+        {ult3.map(p => (
+          <button key={p.id} onClick={() => { setPerSelected(p.id); setFilters(f => ({ ...f, mes: p.mes, anio: p.anio })); }}
+            className={`px-3 py-1.5 rounded-xl text-sm font-semibold border transition ${perSelected === p.id ? "bg-rose-500 text-white border-rose-500" : "bg-white text-slate-600 border-slate-200 hover:border-rose-400"}`}>
+            {p.nombre}
+          </button>
+        ))}
+      </div>
       <FilterBar filters={filters} setFilters={setFilters} config={filterConfig} onClear={clearFilters} />
       <ResultCount total={egresos.length} filtered={filtrados.length} onExport={() => exportCSV(filtrados, [{ key: "concepto", label: "Concepto" }, { key: "cat", label: "Categoría" }, { key: "monto", label: "Monto" }, { key: "fecha", label: "Fecha" }], "egresos.csv")} />
       {showNew && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
             <h3 className="font-bold text-lg">{editId ? "✏️ Editar Egreso" : "Nuevo Egreso"}</h3>
+            <div><label className="text-xs text-slate-500 mb-1 block">Período</label>
+              <select value={form.periodoId ?? ""} onChange={e => {
+                const p = periodosSorted.find(x => x.id === Number(e.target.value));
+                if (p) setForm(f => ({ ...f, periodoId: p.id, mes: p.mes, anio: p.anio }));
+              }} className="w-full border rounded-xl px-3 py-2 text-sm">
+                {periodosSorted.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
             <div><label className="text-xs text-slate-500 mb-1 block">Concepto</label><input value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Monto ($)</label><input type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
             <div><label className="text-xs text-slate-500 mb-1 block">Detalle adicional <span className="text-slate-300">(opcional)</span></label><input value={form.detalle} onChange={e => setForm({ ...form, detalle: e.target.value })} placeholder="Ej: N° factura, proveedor, observaciones..." className="w-full border rounded-xl px-3 py-2 text-sm" /></div>
@@ -2513,7 +2712,8 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
               <th className="px-4 py-3 text-left hidden md:table-cell">Categoría</th>
               <th className="px-4 py-3 text-left hidden md:table-cell">Fecha</th>
               <th className="px-4 py-3 text-right">Monto</th>
-              {canDelete && <th className="px-4 py-3 text-center">Acc.</th>}
+              <th className="px-4 py-3 text-center">📷</th>
+              <th className="px-4 py-3 text-center">Acc.</th>
             </tr>
           </thead>
           <tbody>
@@ -2523,6 +2723,9 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
                 <td className="px-4 py-3 hidden md:table-cell"><span className="bg-slate-100 rounded-full px-2 py-0.5 text-xs">{e.cat}</span></td>
                 <td className="px-4 py-3 hidden md:table-cell text-slate-400">{e.fecha}</td>
                 <td className="px-4 py-3 text-right font-semibold text-rose-600">{fmt(e.monto)}</td>
+                <td className="px-4 py-3 text-center">
+                  {e.soporte && <button onClick={() => setImgView(e.soporte)} title="Ver soporte" className="text-slate-500 hover:text-slate-800 hover:scale-125 transition-transform cursor-pointer text-lg">📷</button>}
+                </td>
                 <td className="px-4 py-3 text-center">
                   {rol !== "lectura" && <button onClick={() => abrir(e)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all duration-150 cursor-pointer text-lg" title="Editar egreso">✏️</button>}
                   {canDelete && <button onClick={async () => {
@@ -2534,7 +2737,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
                 </td>
               </tr>
             ))}
-            {filtrados.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Sin resultados para los filtros aplicados</td></tr>}
+            {filtrados.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Sin resultados para los filtros aplicados</td></tr>}
           </tbody>
         </table>
       </div>
