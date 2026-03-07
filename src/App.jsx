@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import { useConectividad, useSync, useCacheDatos } from "./useOffline";
+import { encolarOperacion, guardarImagenOffline, genLocalId, comprimirImagen, isOnline } from "./offlineEngine";
 
 // ── Edge Function helper para operaciones admin seguras
 const adminUsers = async (action, params) => {
@@ -1490,6 +1492,8 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
   }), [pagos, fDer, derramas]);
 
   const registrarAbono = async (cuotaId, { monto, metodo, imagen, distribucion = [] }, isDerrama = false, cuotaVirtual = null) => {
+    // Comprimir imagen siempre
+    if (imagen) imagen = await comprimirImagen(imagen);
     let pagosActualizados = [...pagos];
 
     if (isDerrama) {
@@ -1498,7 +1502,14 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const abonos = [...(ex.abonos || []), { id: (ex.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
         const montoPagado = parseFloat((ex.montoPagado + monto).toFixed(2));
         const estado = montoPagado >= ex.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-        await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', ex.id);
+        if (!isOnline()) {
+          const lid = genLocalId();
+          await guardarImagenOffline(lid, imagen);
+          await encolarOperacion({ modulo:'pagos', operacion:'update', payload:{ id: ex.id, monto_pagado: montoPagado, estado, abonos }, imagenKey: imagen ? lid : null });
+          await actualizarContador();
+        } else {
+          await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', ex.id);
+        }
         const upd = { ...ex, abonos, montoPagado, estado };
         pagosActualizados = pagosActualizados.map(p => p.id === ex.id ? upd : p);
         setPagos(pagosActualizados);
@@ -1508,8 +1519,17 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const montoPagado = monto;
         const estado = montoPagado >= cuotaVirtual.montoTotal ? "pagado" : "parcial";
         const nuevo = { tipo: "derrama", depto_id: cuotaVirtual.deptoId, depto: cuotaVirtual.depto, periodo_id: cuotaVirtual.periodoId, periodo_nombre: cuotaVirtual.periodoNombre, mes: cuotaVirtual.mes, anio: cuotaVirtual.anio, monto_total: cuotaVirtual.montoTotal, monto_pagado: montoPagado, estado, abonos, concepto: cuotaVirtual.concepto };
-        const { data } = await supabase.from('pagos').insert(nuevo).select().single();
-        const nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: parseFloat(data.monto_total), montoPagado: parseFloat(data.monto_pagado), abonos: data.abonos || [] };
+        let nw;
+        if (!isOnline()) {
+          const lid = genLocalId();
+          await guardarImagenOffline(lid, imagen);
+          await encolarOperacion({ modulo:'pagos', operacion:'insert', payload: nuevo, imagenKey: imagen ? lid : null });
+          await actualizarContador();
+          nw = { ...nuevo, id: lid, deptoId: nuevo.depto_id, periodoId: nuevo.periodo_id, periodoNombre: nuevo.periodo_nombre, montoTotal: nuevo.monto_total, montoPagado: nuevo.monto_pagado, abonos: nuevo.abonos || [] };
+        } else {
+          const { data } = await supabase.from('pagos').insert(nuevo).select().single();
+          nw = { ...data, deptoId: data.depto_id, periodoId: data.periodo_id, periodoNombre: data.periodo_nombre, montoTotal: parseFloat(data.monto_total), montoPagado: parseFloat(data.monto_pagado), abonos: data.abonos || [] };
+        }
         pagosActualizados = [...pagosActualizados, nw];
         setPagos(pagosActualizados);
         setTimeout(() => setComprobante({ cuota: nw, abono: abonos[0] }), 100);
@@ -1519,7 +1539,14 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
       const abonos = [...(pago.abonos || []), { id: (pago.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
       const montoPagado = parseFloat((pago.montoPagado + monto).toFixed(2));
       const estado = montoPagado >= pago.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-      await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', cuotaId);
+      if (!isOnline()) {
+        const lid = genLocalId();
+        await guardarImagenOffline(lid, imagen);
+        await encolarOperacion({ modulo:'pagos', operacion:'update', payload:{ id: cuotaId, monto_pagado: montoPagado, estado, abonos }, imagenKey: imagen ? lid : null });
+        await actualizarContador();
+      } else {
+        await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', cuotaId);
+      }
       const upd = { ...pago, abonos, montoPagado, estado };
       pagosActualizados = pagosActualizados.map(p => p.id === cuotaId ? upd : p);
       setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
@@ -2033,6 +2060,12 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
     const payload = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, depto_id: form.distribucion === "individual" ? Number(form.deptoId) : null };
 
     if (editId) {
+      if (!isOnline()) {
+        await encolarOperacion({ modulo:'derramas', operacion:'update', payload:{ id: editId, ...payload }, imagenKey: null });
+        await actualizarContador();
+        setDerramas(derramas.map(d => d.id === editId ? { ...d, ...payload, montoTotal: Number(form.montoTotal) } : d));
+        setShowNew(false); return;
+      }
       const { error } = await supabase.from('derramas').update(payload).eq('id', editId);
       if (error) { alert("Error al actualizar: " + error.message); return; }
       // Recalcular pagos asociados a esta derrama
@@ -2051,6 +2084,13 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
       setDerramas(derramas.map(d => d.id === editId ? { ...d, ...payload, montoTotal: Number(form.montoTotal) } : d));
     } else {
       const nueva = { ...payload, fecha: todayStr(), estado: "activa" };
+      if (!isOnline()) {
+        const lid = genLocalId();
+        await encolarOperacion({ modulo:'derramas', operacion:'insert', payload: nueva, imagenKey: null });
+        await actualizarContador();
+        setDerramas([...derramas, { ...nueva, id: lid, montoTotal: Number(form.montoTotal) }]);
+        setShowNew(false); return;
+      }
       const { data, error } = await supabase.from('derramas').insert(nueva).select().single();
       if (error) { alert("Error al guardar derrama: " + error.message); return; }
       setDerramas([...derramas, { ...data, montoTotal: parseFloat(data.monto_total) }]);
@@ -2226,14 +2266,29 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
       pagador_tipo: form.pagador_tipo, pagador_id: form.pagador_id || null,
       detalle: form.detalle || null, soporte: form.soporte || null
     };
+    // Comprimir imagen siempre
+    if (payload.soporte) payload.soporte = await comprimirImagen(payload.soporte);
     if (editId) {
-      const { error } = await supabase.from('otros_ingresos').update(payload).eq('id', editId);
-      if (error) { alert("Error al actualizar: " + error.message); return; }
-      setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
+      if (!isOnline()) {
+        await encolarOperacion({ modulo:'otros_ingresos', operacion:'update', payload:{ id: editId, ...payload }, imagenKey: null });
+        await actualizarContador();
+        setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
+      } else {
+        const { error } = await supabase.from('otros_ingresos').update(payload).eq('id', editId);
+        if (error) { alert("Error al actualizar: " + error.message); return; }
+        setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
+      }
     } else {
-      const { data, error } = await supabase.from('otros_ingresos').insert(payload).select().single();
-      if (error) { alert("Error al guardar: " + error.message); return; }
-      setOtrosIngresos([...otrosIngresos, { ...data, cat: data.categoria }]);
+      if (!isOnline()) {
+        const lid = genLocalId();
+        await encolarOperacion({ modulo:'otros_ingresos', operacion:'insert', payload, imagenKey: null });
+        await actualizarContador();
+        setOtrosIngresos([...otrosIngresos, { ...payload, id: lid, cat: payload.categoria }]);
+      } else {
+        const { data, error } = await supabase.from('otros_ingresos').insert(payload).select().single();
+        if (error) { alert("Error al guardar: " + error.message); return; }
+        setOtrosIngresos([...otrosIngresos, { ...data, cat: data.categoria }]);
+      }
     }
     setShowNew(false);
     setEditId(null);
@@ -2590,18 +2645,33 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
     const anio = form.anio;
     const fecha = `${String(today.d).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
     const payload = { concepto: form.concepto, cat: form.cat, monto: Number(form.monto), detalle: form.detalle || null, soporte: form.soporte || null };
+    // Comprimir imagen siempre
+    if (payload.soporte) payload.soporte = await comprimirImagen(payload.soporte);
     if (editId) {
       const fullPayload = { ...payload, mes, anio, fecha };
-      const { error } = await supabase.from('egresos').update(fullPayload).eq('id', editId);
-      if (error) { alert("Error al actualizar: " + error.message); return; }
-      setEgresos(egresos.map(e => e.id === editId ? { ...e, ...fullPayload } : e));
+      if (!isOnline()) {
+        await encolarOperacion({ modulo:'egresos', operacion:'update', payload:{ id: editId, ...fullPayload }, imagenKey: null });
+        await actualizarContador();
+        setEgresos(egresos.map(e => e.id === editId ? { ...e, ...fullPayload } : e));
+      } else {
+        const { error } = await supabase.from('egresos').update(fullPayload).eq('id', editId);
+        if (error) { alert("Error al actualizar: " + error.message); return; }
+        setEgresos(egresos.map(e => e.id === editId ? { ...e, ...fullPayload } : e));
+      }
     } else {
       const duplicado = egresos.find(e => e.concepto.trim().toLowerCase() === form.concepto.trim().toLowerCase() && e.mes === mes && e.anio === anio);
       if (duplicado) { alert(`Ya existe un egreso con el concepto "${form.concepto}" en este período.`); return; }
       const nuevo = { ...payload, mes, anio, fecha };
-      const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
-      if (error) { alert("Error al guardar egreso: " + error.message); return; }
-      setEgresos([...egresos, data]);
+      if (!isOnline()) {
+        const lid = genLocalId();
+        await encolarOperacion({ modulo:'egresos', operacion:'insert', payload: nuevo, imagenKey: null });
+        await actualizarContador();
+        setEgresos([...egresos, { ...nuevo, id: lid }]);
+      } else {
+        const { data, error } = await supabase.from('egresos').insert(nuevo).select().single();
+        if (error) { alert("Error al guardar egreso: " + error.message); return; }
+        setEgresos([...egresos, data]);
+      }
     }
     setShowNew(false);
     setEditId(null);
@@ -3263,6 +3333,11 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [showInactividad, setShowInactividad] = useState(false);
   const [config, setConfig] = useState({ nombre_edificio: "Mi Edificio", nombre_corto: "Edificio", logo: null, color_primario: "#6366f1" });
+  const [bloqueado, setBloqueado] = useState(false); // logout suave offline
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const online = useConectividad();
+  const { guardar: guardarCache, recuperar: recuperarCache } = useCacheDatos();
 
   useEffect(() => {
     // Restaurar sesión activa al recargar la página
@@ -3294,6 +3369,26 @@ export default function App() {
 
   const cargarDatos = async () => {
     setCargando(true);
+    // Si no hay internet, cargar desde caché
+    if (!navigator.onLine) {
+      try {
+        const [cd, cu, cp, cpg, cdr, ce, coi, ccfg, cult] = await Promise.all([
+          recuperarCache('deptos'), recuperarCache('usuarios'), recuperarCache('periodos'),
+          recuperarCache('pagos'), recuperarCache('derramas'), recuperarCache('egresos'),
+          recuperarCache('otros_ingresos'), recuperarCache('config'), recuperarCache('ultima_carga')
+        ]);
+        if (cd) setDeptos(cd.data);
+        if (cu) setUsuarios(cu.data);
+        if (cp) setPeriodos(cp.data);
+        if (cpg) setPagos(cpg.data);
+        if (cdr) setDerramas(cdr.data);
+        if (ce) setEgresos(ce.data);
+        if (coi) setOtrosIngresos(coi.data);
+        if (ccfg) setConfig(ccfg.data);
+      } catch(e) { console.warn('Cache read error:', e); }
+      setCargando(false);
+      return;
+    }
     const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }, { data: dataOtrosIngresos }, { data: dataConfig }] = await Promise.all([
       supabase.from('deptos').select('*').order('id'),
       supabase.from('usuarios').select('*').order('id'),
@@ -3317,12 +3412,50 @@ export default function App() {
     const egresosAdap = (dataEgresos || []).map(e => ({ ...e, soporte: e.soporte || null }));
     setDerramas(derramasAdap);
     setEgresos(egresosAdap);
-    setOtrosIngresos((dataOtrosIngresos || []).map(i => ({ ...i, cat: i.categoria })));
+    const oi = (dataOtrosIngresos || []).map(i => ({ ...i, cat: i.categoria }));
+    setOtrosIngresos(oi);
+    // Guardar en caché para lectura offline
+    try {
+      await guardarCache('deptos', deptosAdap);
+      await guardarCache('usuarios', usuariosAdap);
+      await guardarCache('periodos', periodosAdap);
+      await guardarCache('pagos', pagosAdap);
+      await guardarCache('derramas', derramasAdap);
+      await guardarCache('egresos', egresosAdap);
+      await guardarCache('otros_ingresos', oi);
+      await guardarCache('config', dataConfig || config);
+      await guardarCache('ultima_carga', { timestamp: Date.now() });
+    } catch(e) { console.warn('Cache write error:', e); }
     setCargando(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { pendientes, sincronizando, ultimaSync, resultadoSync, ejecutarSync, actualizarContador } = useSync(online, cargarDatos);
+
   const login = async (u) => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); await cargarDatos(); };
-  const logout = async () => { await supabase.auth.signOut(); setUsuario(null); setShowInactividad(false); };
+  const logout = async () => {
+    if (!navigator.onLine) {
+      // Logout suave: bloquear pantalla sin destruir sesión ni token
+      setBloqueado(true);
+      setShowInactividad(false);
+      return;
+    }
+    await supabase.auth.signOut();
+    setUsuario(null);
+    setShowInactividad(false);
+  };
+  const desbloquear = () => {
+    if (!usuario) return;
+    const passCorrecta = usuarios.find(u => u.id === usuario.id)?.pass;
+    if (pinInput === passCorrecta) {
+      setBloqueado(false);
+      setPinInput("");
+      setPinError(false);
+    } else {
+      setPinError(true);
+      setPinInput("");
+    }
+  };
 
   // Hook inactividad — solo activo cuando hay sesión
   useInactividad(
@@ -3367,6 +3500,68 @@ export default function App() {
           onContinuar={() => setShowInactividad(false)}
           onCerrar={logout}
         />
+      )}
+
+      {/* ── Pantalla de bloqueo offline ── */}
+      {bloqueado && (
+        <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center z-[9999] p-6">
+          <div className="bg-white/10 backdrop-blur rounded-3xl p-8 w-full max-w-sm text-center space-y-5">
+            <div className="text-5xl">🔒</div>
+            <div>
+              <h2 className="text-xl font-bold text-white">{config.nombre_edificio}</h2>
+              <p className="text-indigo-200 text-sm mt-1">Sesión bloqueada por inactividad</p>
+              <p className="text-white/60 text-xs mt-2">👤 {usuario?.nombre}</p>
+            </div>
+            <div className="bg-amber-500/20 border border-amber-400/30 rounded-xl px-4 py-2">
+              <p className="text-amber-200 text-xs">📶 Sin conexión — tus datos están guardados localmente</p>
+            </div>
+            <div className="space-y-3">
+              <input
+                type="password"
+                value={pinInput}
+                onChange={e => { setPinInput(e.target.value); setPinError(false); }}
+                onKeyDown={e => e.key === 'Enter' && desbloquear()}
+                placeholder="Ingresa tu contraseña"
+                className={`w-full bg-white/10 border ${pinError ? 'border-rose-400' : 'border-white/20'} rounded-xl px-4 py-3 text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400`}
+                autoFocus
+              />
+              {pinError && <p className="text-rose-300 text-xs">Contraseña incorrecta</p>}
+              <button onClick={desbloquear}
+                className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-semibold py-3 rounded-xl text-sm transition">
+                🔓 Desbloquear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner offline/sync ── */}
+      {(!online || pendientes > 0 || sincronizando || resultadoSync) && (
+        <div className={`fixed top-0 left-0 right-0 z-50 text-xs text-white px-4 py-2 flex items-center justify-between gap-3 transition-all
+          ${!online ? 'bg-amber-600' : sincronizando ? 'bg-indigo-600' : resultadoSync?.errores > 0 ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+          <span>
+            {!online && pendientes === 0 && '📶 Sin conexión — los datos se guardan localmente'}
+            {!online && pendientes > 0 && `📶 Sin conexión — ${pendientes} cambio${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''} de sincronizar`}
+            {online && sincronizando && '🔄 Sincronizando cambios con el servidor...'}
+            {online && !sincronizando && resultadoSync && resultadoSync.errores === 0 &&
+              `✅ Sincronización completa — ${resultadoSync.sincronizados} guardado${resultadoSync.sincronizados !== 1 ? 's' : ''}${resultadoSync.omitidos > 0 ? `, ${resultadoSync.omitidos} omitido${resultadoSync.omitidos !== 1 ? 's' : ''} (duplicado${resultadoSync.omitidos !== 1 ? 's' : ''})` : ''}`}
+            {online && !sincronizando && resultadoSync && resultadoSync.errores > 0 &&
+              `⚠️ ${resultadoSync.errores} error${resultadoSync.errores !== 1 ? 'es' : ''} al sincronizar`}
+            {online && !sincronizando && !resultadoSync && pendientes > 0 &&
+              `⏳ ${pendientes} cambio${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''}`}
+          </span>
+          {online && pendientes > 0 && !sincronizando && (
+            <button onClick={ejecutarSync}
+              className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg font-semibold transition flex-shrink-0">
+              Sincronizar ahora
+            </button>
+          )}
+          {ultimaSync && !sincronizando && !resultadoSync && online && pendientes === 0 && (
+            <span className="text-white/70 flex-shrink-0">
+              Última sync: {ultimaSync.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
       )}
 
       {/* ── SIDEBAR OSCURO (desktop) ── */}
