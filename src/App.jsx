@@ -103,6 +103,31 @@ function Confirm({ msg, onYes, onNo }) {
   );
 }
 
+
+// ─── MODAL CONFIRMACIÓN (reemplaza confirm() nativo que falla en móvil PWA) ──
+function ModalConfirm({ mensaje, onOk, onCancel, okLabel = "Eliminar", okColor = "bg-rose-600 hover:bg-rose-700" }) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999] p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+        <div className="text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <p className="text-slate-700 text-sm leading-relaxed">{mensaje}</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 border border-slate-300 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+            Cancelar
+          </button>
+          <button onClick={onOk}
+            className={`flex-1 ${okColor} text-white py-2.5 rounded-xl text-sm font-semibold transition`}>
+            {okLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── COMPROBANTE ──────────────────────────────────────────────────────────────
 function Comprobante({ cuota, abono, depto, onClose, appName = "Mi Edificio" }) {
   const nro = `#${String(abono?.id || 1).padStart(6, "0")}`;
@@ -345,7 +370,7 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
           <div onClick={() => fileRef.current.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300">
             {preview ? <img src={preview} alt="" className="max-h-24 mx-auto rounded-lg object-contain" /> : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImg} />
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImg} />
         </div>
         {cuota.abonos?.length > 0 && (
           <div>
@@ -1659,7 +1684,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
                 ? <img src={editImagen.preview} alt="soporte" className="max-h-32 mx-auto rounded-lg object-contain" />
                 : <div className="text-slate-400 text-sm py-4">📎 Seleccionar nueva imagen</div>}
             </div>
-            <input id="edit-img-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+            <input id="edit-img-input" type="file" accept="image/*" className="hidden" onChange={e => {
               const f = e.target.files[0]; if (!f) return;
               const r = new FileReader(); r.onload = ev => setEditImagen({ ...editImagen, preview: ev.target.result }); r.readAsDataURL(f);
             }} />
@@ -2041,6 +2066,7 @@ const guardar = async () => {
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
 function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [], periodos = [], pagos = [], setPagos, actualizarContador }) {
   const online = useConectividad();
+  const [confirmDerrama, setConfirmDerrama] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
@@ -2181,6 +2207,20 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
           </div>
         </div>
       )}
+      {confirmDerrama && (
+        <ModalConfirm
+          mensaje={`¿Eliminar la derrama "${confirmDerrama.titulo}"? También se eliminarán los pagos asociados.`}
+          onCancel={() => setConfirmDerrama(null)}
+          onOk={async () => {
+            await supabase.from('pagos').delete().eq('periodo_nombre', confirmDerrama.titulo).eq('tipo', 'derrama');
+            const { error } = await supabase.from('derramas').delete().eq('id', confirmDerrama.id);
+            if (error) { alert("Error al eliminar: " + error.message); setConfirmDerrama(null); return; }
+            setDerramas(derramas.filter(x => x.id !== confirmDerrama.id));
+            setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === confirmDerrama.titulo)));
+            setConfirmDerrama(null);
+          }}
+        />
+      )}
       <div className="space-y-3">
         {derramas.map(d => (
           <div key={d.id} className="bg-white rounded-2xl border border-slate-200 p-5">
@@ -2195,14 +2235,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${d.estado === "activa" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{d.estado === "activa" ? "🔔 Activa" : "✅ Cerrada"}</span>
                 <div className="flex gap-3 mt-1">
                   {rol !== "lectura" && <button onClick={() => abrir(d)} className="text-xs text-slate-400 hover:text-purple-600 transition">✏️ Editar</button>}
-                  {canDelete && <button onClick={async () => {
-                    if (!confirm(`¿Eliminar la derrama "${d.titulo}"? También se eliminarán los pagos asociados.`)) return;
-                    await supabase.from('pagos').delete().eq('periodo_nombre', d.titulo).eq('tipo', 'derrama');
-                    const { error } = await supabase.from('derramas').delete().eq('id', d.id);
-                    if (error) { alert("Error al eliminar: " + error.message); return; }
-                    setDerramas(derramas.filter(x => x.id !== d.id));
-                    setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === d.titulo)));
-                  }} className="text-xs text-slate-400 hover:text-rose-600 transition">🗑 Eliminar</button>}
+                  {canDelete && <button onClick={() => setConfirmDerrama({ id: d.id, titulo: d.titulo })} className="text-xs text-slate-400 hover:text-rose-600 transition">🗑 Eliminar</button>}
                 </div>
               </div>
             </div>
@@ -2217,6 +2250,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
 // ─── OTROS INGRESOS ──────────────────────────────────────────────────────────
 function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false, actualizarContador }) {
   const online = useConectividad();
+  const [confirmEl, setConfirmEl] = useState(null);
   const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
@@ -2299,7 +2333,6 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
   };
 
   const eliminar = async (id) => {
-    if (!confirm("¿Eliminar este ingreso?")) return;
     const { error } = await supabase.from("otros_ingresos").delete().eq("id", id);
     if (error) { alert("Error al eliminar: " + error.message); return; }
     setOtrosIngresos(otrosIngresos.filter(i => i.id !== id));
@@ -2310,6 +2343,13 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
 
   return (
     <div className="space-y-4">
+      {confirmEl && (
+        <ModalConfirm
+          mensaje="¿Eliminar este ingreso? Esta acción no se puede deshacer."
+          onCancel={() => setConfirmEl(null)}
+          onOk={async () => { await eliminar(confirmEl.id); setConfirmEl(null); }}
+        />
+      )}
       {comprobante && <ComprobanteOI ingreso={comprobante} onClose={() => setComprobante(null)} />}
       {imgView && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
@@ -2413,7 +2453,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
                   ? <img src={form.soporte} alt="soporte" className="max-h-24 mx-auto rounded-lg object-contain" />
                   : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>}
               </div>
-              <input id="oi-file-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+              <input id="oi-file-input" type="file" accept="image/*" className="hidden" onChange={e => {
                 const f = e.target.files[0]; if (!f) return;
                 const r = new FileReader(); r.onload = ev => setForm(fm => ({ ...fm, soporte: ev.target.result })); r.readAsDataURL(f);
               }} />
@@ -2467,7 +2507,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
                 </td>
                 <td className="px-3 py-2.5 text-center">
                   {rol !== "lectura" && <button onClick={() => abrirOI(i)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all cursor-pointer text-lg mr-1" title="Editar">✏️</button>}
-                  {canDelete && <button onClick={() => eliminar(i.id)} className="text-slate-300 hover:text-rose-600 hover:scale-125 transition-all cursor-pointer text-lg" title="Eliminar">🗑</button>}
+                  {canDelete && <button onClick={() => setConfirmEl({ id: i.id })} className="text-slate-300 hover:text-rose-600 hover:scale-125 transition-all cursor-pointer text-lg" title="Eliminar">🗑</button>}
                 </td>
               </tr>
             ))}
@@ -2604,6 +2644,7 @@ function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
 // ─── EGRESOS ──────────────────────────────────────────────────────────────────
 function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, actualizarContador }) {
   const online = useConectividad();
+  const [confirmEl, setConfirmEl] = useState(null);
   const periodosSorted = useMemo(() => [...periodos].sort((a,b) => a.anio !== b.anio ? a.anio-b.anio : a.mes-b.mes), [periodos]);
   const lastPer = periodosSorted[periodosSorted.length - 1];
   const ult3 = useMemo(() => [...periodosSorted].reverse().slice(0, 3), [periodosSorted]);
@@ -2684,6 +2725,18 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
   const clearFilters = () => { setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" }); setPerSelected(lastPer?.id ?? null); };
   return (
     <div className="space-y-4">
+      {confirmEl && (
+        <ModalConfirm
+          mensaje="¿Estás seguro de borrar este egreso? Esta acción no se puede deshacer."
+          onCancel={() => setConfirmEl(null)}
+          onOk={async () => {
+            const { error } = await supabase.from('egresos').delete().eq('id', confirmEl.id);
+            if (error) { alert("No se pudo borrar el egreso."); setConfirmEl(null); return; }
+            setEgresos(egresos.filter(x => x.id !== confirmEl.id));
+            setConfirmEl(null);
+          }}
+        />
+      )}
       {imgView && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
           <div className="relative max-w-lg w-full">
@@ -2743,7 +2796,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
                   : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>
                 }
               </div>
-              <input id="egresos-file-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+              <input id="egresos-file-input" type="file" accept="image/*" className="hidden" onChange={e => {
                 const f = e.target.files?.[0];
                 if (!f) return;
                 const r = new FileReader();
@@ -2803,12 +2856,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
                 </td>
                 <td className="px-4 py-3 text-center">
                   {rol !== "lectura" && <button onClick={() => abrir(e)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all duration-150 cursor-pointer text-lg" title="Editar egreso">✏️</button>}
-                  {canDelete && <button onClick={async () => {
-                    if (!confirm("¿Estás seguro de borrar este egreso?")) return;
-                    const { error } = await supabase.from('egresos').delete().eq('id', e.id);
-                    if (error) { alert("No se pudo borrar el egreso. Inténtalo nuevamente."); console.error("Error al borrar egreso", error); return; }
-                    setEgresos(egresos.filter(x => x.id !== e.id));
-                  }} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg ml-1" title="Eliminar egreso">🗑</button>}
+                  {canDelete && <button onClick={() => setConfirmEl({ id: e.id })} className="text-slate-300 hover:text-rose-600 hover:scale-125 hover:drop-shadow-md transition-all duration-150 cursor-pointer text-lg ml-1" title="Eliminar egreso">🗑</button>}
                 </td>
               </tr>
             ))}
@@ -2822,6 +2870,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
 
 // ─── USUARIOS ────────────────────────────────────────────────────────────────
 function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuario }) {
+  const [confirmEl, setConfirmEl] = useState(null); // { usuario } para confirmar eliminación
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const emptyForm = { nombre: "", email: "", rol: "prop", user: "", pass: "", deptos: [], activo: true, modulos: [], permisos: {} };
@@ -2891,7 +2940,6 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
   };
 
   const eliminar = async (u) => {
-    if (!confirm(`¿Eliminar al usuario ${u.nombre}? Esta acción no se puede deshacer.`)) return;
     // 1. Eliminar de tabla usuarios
     const { error } = await supabase.from('usuarios').delete().eq('id', u.id);
     if (error) { alert("Error al eliminar: " + error.message); return; }
@@ -2907,6 +2955,13 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
 
   return (
     <div className="space-y-4">
+      {confirmEl && (
+        <ModalConfirm
+          mensaje={`¿Eliminar al usuario ${confirmEl.usuario?.nombre}? Esta acción no se puede deshacer.`}
+          onCancel={() => setConfirmEl(null)}
+          onOk={async () => { await eliminar(confirmEl.usuario); setConfirmEl(null); }}
+        />
+      )}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-slate-800">Gestión de Usuarios</h2>
         {rol === "admin" && <button onClick={() => abrir()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">+ Nuevo Usuario</button>}
@@ -3033,7 +3088,7 @@ function Usuarios({ usuarios, setUsuarios, deptos, rol, usuarioActivo, setUsuari
                     {!u.activo && <span className="text-xs bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Inactivo</span>}
                     <button onClick={() => simEmail(u)} className="text-slate-300 hover:text-indigo-500 text-lg" title="Simular correo">📧</button>
                     {rol === "admin" && <button onClick={() => abrir(u)} className="text-slate-300 hover:text-indigo-500 hover:scale-125 transition-all text-lg" title="Editar">✏️</button>}
-                    {rol === "admin" && u.id !== usuarioActivo?.id && <button onClick={() => eliminar(u)} className="text-slate-300 hover:text-rose-500 hover:scale-125 transition-all text-lg" title="Eliminar usuario">🗑</button>}
+                    {rol === "admin" && u.id !== usuarioActivo?.id && <button onClick={() => setConfirmEl({ usuario: u })} className="text-slate-300 hover:text-rose-500 hover:scale-125 transition-all text-lg" title="Eliminar usuario">🗑</button>}
                   </div>
                 </div>
               ))}
