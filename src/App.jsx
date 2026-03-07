@@ -313,24 +313,32 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
   const handleImg = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => { setImagen(ev.target.result); setPreview(ev.target.result); }; r.readAsDataURL(f); };
 
   const calcularDistribucion = () => {
-    // ── Lógica correcta: distribuir de más antiguo a más nuevo ──
-    // El total ingresado cubre primero las deudas más antiguas, luego la cuota actual
-    let restante = parseFloat(montoN.toFixed(2));
-    const dist = [];
+    // ── Lógica correcta: insertar cuota actual en su posición cronológica ──
+    // y distribuir de más antiguo a más nuevo cubriendo cada cuota completamente
+    
+    // Construir lista completa ordenada: deudas + cuota actual en posición cronológica
+    const cuotaActualEntry = { ...cuota, _esCuotaActual: true, _saldo: saldo };
+    const todasOrdenadas = [...pagosDeuda.map(p => ({ ...p, _esCuotaActual: false, _saldo: parseFloat((p.montoTotal - p.montoPagado).toFixed(2)) })), cuotaActualEntry]
+      .sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
 
-    // 1. Primero cubrir deudas anteriores (ya vienen ordenadas de más antigua a más nueva)
-    for (const p of pagosDeuda) {
+    let restante = parseFloat(montoN.toFixed(2));
+    const distOtras = [];
+    let paraActual = 0;
+
+    for (const p of todasOrdenadas) {
       if (restante <= 0) break;
-      const saldoP = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
-      const asignar = parseFloat(Math.min(saldoP, restante).toFixed(2));
-      if (asignar > 0) dist.push({ ...p, asignar });
+      const asignar = parseFloat(Math.min(p._saldo, restante).toFixed(2));
+      if (asignar <= 0) continue;
+      if (p._esCuotaActual) {
+        paraActual = asignar;
+      } else {
+        distOtras.push({ ...p, asignar });
+      }
       restante = parseFloat((restante - asignar).toFixed(2));
     }
 
-    // 2. Lo que queda se aplica a la cuota actual
-    const paraActual = parseFloat(Math.min(saldo, restante).toFixed(2));
     setMontoParaCuotaActual(paraActual);
-    setDistribucion(dist);
+    setDistribucion(distOtras);
     setDistribuirModal(true);
   };
 
@@ -350,23 +358,28 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
         <h3 className="font-bold text-lg text-slate-800">💰 Distribución del pago</h3>
         <p className="text-sm text-slate-500">El pago de <strong>{fmt(montoN)}</strong> se aplicará de más antiguo a más reciente:</p>
         <div className="space-y-2 max-h-60 overflow-y-auto">
-          {distribucion.map((d, i) => (
-            <div key={i} className="flex justify-between text-xs bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
-              <span className="text-slate-600">📅 {d.periodoNombre} <span className="text-amber-600">(vencida)</span></span>
-              <span className="font-bold text-amber-700">{fmt(d.asignar)}</span>
-            </div>
-          ))}
-          {montoParaCuotaActual > 0
-            ? <div className="flex justify-between text-xs bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100">
-                <span className="text-slate-600">📅 {cuota.periodoNombre} (cuota actual)</span>
-                <span className="font-bold text-emerald-700">{fmt(montoParaCuotaActual)}</span>
-              </div>
-            : <div className="flex justify-between text-xs bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-                <span className="text-slate-400">📅 {cuota.periodoNombre} (cuota actual)</span>
-                <span className="text-slate-400">Sin cubrir</span>
-              </div>
-          }
-          {parseFloat((montoN - distribucion.reduce((a,d)=>a+d.asignar,0) - montoParaCuotaActual).toFixed(2)) > 0 && (
+          {/* Mostrar todas las cuotas en orden cronológico */}
+          {(() => {
+            const cuotaActualEntry = { _esCuotaActual: true, periodoNombre: cuota.periodoNombre, anio: cuota.anio, mes: cuota.mes, asignar: montoParaCuotaActual };
+            const todas = [...distribucion.map(d => ({ ...d, _esCuotaActual: false })), cuotaActualEntry]
+              .sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
+            return todas.map((d, i) => d._esCuotaActual
+              ? d.asignar > 0
+                ? <div key={i} className="flex justify-between text-xs bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100">
+                    <span className="text-slate-600">📅 {d.periodoNombre} <span className="text-emerald-600">(este mes)</span></span>
+                    <span className="font-bold text-emerald-700">{fmt(d.asignar)}</span>
+                  </div>
+                : <div key={i} className="flex justify-between text-xs bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
+                    <span className="text-slate-400">📅 {d.periodoNombre} (este mes)</span>
+                    <span className="text-slate-400">Sin cubrir</span>
+                  </div>
+              : <div key={i} className="flex justify-between text-xs bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
+                  <span className="text-slate-600">📅 {d.periodoNombre} <span className="text-amber-600">(vencida)</span></span>
+                  <span className="font-bold text-amber-700">{fmt(d.asignar)}</span>
+                </div>
+            );
+          })()}
+          {parseFloat((montoN - distribucion.reduce((a,d)=>a+d.asignar,0) - montoParaCuotaActual).toFixed(2)) > 0.009 && (
             <div className="flex justify-between text-xs bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
               <span className="text-slate-500">Saldo a favor</span>
               <span className="font-bold text-indigo-600">{fmt(parseFloat((montoN - distribucion.reduce((a,d)=>a+d.asignar,0) - montoParaCuotaActual).toFixed(2)))}</span>
@@ -1762,9 +1775,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
             p.deptoId === modal.deptoId &&
             p.id !== modal.id &&
             p.estado !== "pagado" &&
-            p.tipo === "ordinario" &&
-            // Solo meses ANTERIORES a la cuota abierta
-            (p.anio < modal.anio || (p.anio === modal.anio && p.mes < modal.mes))
+            p.tipo === "ordinario"
           ).sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes) : []}
         onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
       {revertir && <Confirm msg="¿Revertir este pago? Se eliminarán todos los abonos." onYes={() => doRevertir(revertir)} onNo={() => setRevertir(null)} />}
