@@ -1758,7 +1758,14 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
         </div>
       )}
       {modal && <ModalPago cuota={modal} onClose={() => setModal(null)}
-        pagosDeuda={modal.deptoId ? pagos.filter(p => p.deptoId === modal.deptoId && p.id !== modal.id && p.estado !== "pagado").sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes)) : []}
+        pagosDeuda={modal.deptoId ? pagos.filter(p =>
+            p.deptoId === modal.deptoId &&
+            p.id !== modal.id &&
+            p.estado !== "pagado" &&
+            p.tipo === "ordinario" &&
+            // Solo meses ANTERIORES a la cuota abierta
+            (p.anio < modal.anio || (p.anio === modal.anio && p.mes < modal.mes))
+          ).sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes) : []}
         onConfirm={data => { if (modal.tipo === "derrama") registrarAbono(null, data, true, modal); else registrarAbono(modal.id, data); }} />}
       {revertir && <Confirm msg="¿Revertir este pago? Se eliminarán todos los abonos." onYes={() => doRevertir(revertir)} onNo={() => setRevertir(null)} />}
       <h2 className="text-2xl font-bold text-slate-800">Gestión de Pagos</h2>
