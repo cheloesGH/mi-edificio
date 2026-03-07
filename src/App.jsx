@@ -297,51 +297,85 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
   const [preview, setPreview] = useState(null);
   const [confirm, setConfirm] = useState(false);
   const [distribuirModal, setDistribuirModal] = useState(false);
-  const [distribucion, setDistribucion] = useState([]);
+  const [distribucion, setDistribucion] = useState([]); // deudas anteriores
+  const [montoParaCuotaActual, setMontoParaCuotaActual] = useState(0);
   const fileRef = useRef();
   const montoN = parseFloat(monto || 0);
+  const hayDeudas = pagosDeuda.length > 0;
+  // Excedente: lo que sobra después de cubrir la cuota actual
   const excedente = parseFloat((montoN - saldo).toFixed(2));
-  const hayExcedente = excedente > 0 && pagosDeuda.length > 0;
+  // Hay distribución posible si hay deudas anteriores Y el monto supera la cuota actual
+  const hayExcedente = excedente > 0 && hayDeudas;
+  // También advertir si hay deudas aunque el monto no cubra la cuota actual
+  const hayDeudaAnterior = hayDeudas;
   const err = montoN <= 0;
 
   const handleImg = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => { setImagen(ev.target.result); setPreview(ev.target.result); }; r.readAsDataURL(f); };
 
   const calcularDistribucion = () => {
-    let restante = parseFloat(excedente.toFixed(2));
+    // ── Lógica correcta: distribuir de más antiguo a más nuevo ──
+    // El total ingresado cubre primero las deudas más antiguas, luego la cuota actual
+    let restante = parseFloat(montoN.toFixed(2));
     const dist = [];
+
+    // 1. Primero cubrir deudas anteriores (ya vienen ordenadas de más antigua a más nueva)
     for (const p of pagosDeuda) {
       if (restante <= 0) break;
       const saldoP = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
       const asignar = parseFloat(Math.min(saldoP, restante).toFixed(2));
-      dist.push({ ...p, asignar });
+      if (asignar > 0) dist.push({ ...p, asignar });
       restante = parseFloat((restante - asignar).toFixed(2));
     }
+
+    // 2. Lo que queda se aplica a la cuota actual
+    const paraActual = parseFloat(Math.min(saldo, restante).toFixed(2));
+    setMontoParaCuotaActual(paraActual);
     setDistribucion(dist);
     setDistribuirModal(true);
   };
 
-  const submit = () => { onConfirm({ monto: Math.min(montoN, saldo), metodo, imagen, distribucion: distribuirModal ? distribucion : [] }); onClose(); };
+  // Al confirmar: monto para cuota actual es lo que quedó después de cubrir deudas
+  const submit = () => {
+    onConfirm({
+      monto: distribuirModal ? montoParaCuotaActual : Math.min(montoN, saldo),
+      metodo, imagen,
+      distribucion: distribuirModal ? distribucion : []
+    });
+    onClose();
+  };
 
   if (distribuirModal) return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-        <h3 className="font-bold text-lg text-slate-800">💰 Distribuir excedente</h3>
-        <p className="text-sm text-slate-500">El pago de <strong>{fmt(montoN)}</strong> cubre esta cuota y sobran <strong className="text-indigo-600">{fmt(excedente)}</strong>. Se distribuirá así:</p>
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs bg-emerald-50 rounded-xl px-3 py-2">
-            <span className="text-slate-600">📅 {cuota.periodoNombre} (esta cuota)</span>
-            <span className="font-bold text-emerald-700">{fmt(saldo)}</span>
-          </div>
+        <h3 className="font-bold text-lg text-slate-800">💰 Distribución del pago</h3>
+        <p className="text-sm text-slate-500">El pago de <strong>{fmt(montoN)}</strong> se aplicará de más antiguo a más reciente:</p>
+        <div className="space-y-2 max-h-60 overflow-y-auto">
           {distribucion.map((d, i) => (
-            <div key={i} className="flex justify-between text-xs bg-indigo-50 rounded-xl px-3 py-2">
-              <span className="text-slate-600">📅 {d.periodoNombre}</span>
-              <span className="font-bold text-indigo-700">{fmt(d.asignar)}</span>
+            <div key={i} className="flex justify-between text-xs bg-amber-50 rounded-xl px-3 py-2 border border-amber-100">
+              <span className="text-slate-600">📅 {d.periodoNombre} <span className="text-amber-600">(vencida)</span></span>
+              <span className="font-bold text-amber-700">{fmt(d.asignar)}</span>
             </div>
           ))}
+          {montoParaCuotaActual > 0
+            ? <div className="flex justify-between text-xs bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100">
+                <span className="text-slate-600">📅 {cuota.periodoNombre} (cuota actual)</span>
+                <span className="font-bold text-emerald-700">{fmt(montoParaCuotaActual)}</span>
+              </div>
+            : <div className="flex justify-between text-xs bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
+                <span className="text-slate-400">📅 {cuota.periodoNombre} (cuota actual)</span>
+                <span className="text-slate-400">Sin cubrir</span>
+              </div>
+          }
+          {parseFloat((montoN - distribucion.reduce((a,d)=>a+d.asignar,0) - montoParaCuotaActual).toFixed(2)) > 0 && (
+            <div className="flex justify-between text-xs bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
+              <span className="text-slate-500">Saldo a favor</span>
+              <span className="font-bold text-indigo-600">{fmt(parseFloat((montoN - distribucion.reduce((a,d)=>a+d.asignar,0) - montoParaCuotaActual).toFixed(2)))}</span>
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setDistribuirModal(false)} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Volver</button>
-          <button onClick={submit} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">✅ Confirmar distribución</button>
+          <button onClick={submit} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl text-sm font-semibold">✅ Confirmar</button>
         </div>
       </div>
     </div>
@@ -367,9 +401,9 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
           <input type="number" value={monto} min="0.01" step="0.01" onChange={e => setMonto(e.target.value)}
             className={`w-full border rounded-xl px-3 py-2 text-sm ${err && monto ? "border-rose-400" : ""}`} />
           {err && monto && <p className="text-rose-500 text-xs mt-1">Monto inválido</p>}
-          {hayExcedente && (
-            <div className="mt-2 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 text-xs text-indigo-700">
-              💡 Excedente de <strong>{fmt(excedente)}</strong> — hay {pagosDeuda.length} cuota(s) pendiente(s) de este propietario
+          {hayDeudaAnterior && (
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
+              ⚠️ Este propietario tiene <strong>{pagosDeuda.length} cuota(s) vencida(s)</strong> — el pago se distribuirá cubriendo primero las más antiguas
             </div>
           )}
         </div>
@@ -398,8 +432,8 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
         )}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 border border-slate-300 py-2 rounded-xl text-sm">Cancelar</button>
-          {hayExcedente
-            ? <button onClick={() => montoN > 0 && calcularDistribucion()} disabled={!monto || montoN <= 0} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Distribuir →</button>
+          {hayDeudaAnterior
+            ? <button onClick={() => montoN > 0 && calcularDistribucion()} disabled={!monto || montoN <= 0} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Ver distribución →</button>
             : <button onClick={() => !err && monto && setConfirm(true)} disabled={err || !monto} className="flex-1 bg-indigo-600 disabled:bg-slate-300 text-white py-2 rounded-xl text-sm font-semibold">Registrar</button>
           }
         </div>
