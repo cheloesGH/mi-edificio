@@ -447,7 +447,7 @@ function Login({ onLogin, appName = "Mi Edificio", logo = null }) {
             {logo ? <img src={logo} alt="logo" className="w-full h-full object-cover" /> : <span>🏢</span>}
           </div>
           <h1 className="text-2xl font-bold text-slate-800">{appName}</h1>
-          <p className="text-slate-400 text-sm">Sistema de Administración v1.0</p>
+          <p className="text-slate-400 text-sm">Sistema de Administración v3.1</p>
         </div>
         <div className="space-y-3">
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
@@ -3153,7 +3153,12 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
   const cuotaActual = misPagos.find(p => p.periodoId === perActual?.id && p.tipo === "ordinario");
   const totalPagado = misPagos.filter(p => p.estado === "pagado").reduce((a, p) => a + p.montoPagado, 0);
   const totalAdeudado = misPagos.filter(p => p.estado !== "pagado").reduce((a, p) => a + Math.max(0, p.montoTotal - p.montoPagado), 0);
-  const dersPend = derramas.filter(d => !pagos.find(p => p.tipo === "derrama" && p.deptoId === deptoSel && p.concepto === d.titulo && p.estado === "pagado"));
+  // Derramas pendientes: solo las que tienen un pago pendiente/parcial para ESTE depto
+  const dersPend = derramas.filter(d => {
+    const pagoD = pagos.find(p => p.tipo === "derrama" && p.deptoId === deptoSel && p.periodoNombre === d.titulo);
+    // Si existe el pago y está pagado → no pendiente. Si no existe o está pendiente/parcial → pendiente
+    return !pagoD || pagoD.estado !== "pagado";
+  });
   const estColor = cuotaActual?.estado === "pagado" ? "text-emerald-300" : cuotaActual?.estado === "parcial" ? "text-blue-300" : "text-amber-300";
   const estLabel = cuotaActual?.estado === "pagado" ? "✅ Al día" : cuotaActual?.estado === "parcial" ? "💧 Parcial" : "⚠️ Pendiente";
   return (
@@ -3178,7 +3183,12 @@ function PortalProp({ usuario, pagos, derramas, deptos, periodos }) {
       {dersPend.length > 0 && <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
         <h3 className="font-semibold text-amber-800 mb-2 text-sm">🔔 Derramas pendientes</h3>
         {dersPend.map(d => {
-          const monto = d.distribucion === "coeficiente" ? parseFloat((dep.coef / 100 * d.montoTotal).toFixed(2)) : parseFloat((d.montoTotal / 30).toFixed(2));
+          const pagoD = pagos.find(p => p.tipo === "derrama" && p.deptoId === deptoSel && p.periodoNombre === d.titulo);
+          const pendiente = pagoD ? Math.max(0, pagoD.montoTotal - pagoD.montoPagado) : 
+            d.distribucion === "coeficiente" ? parseFloat((dep.coef / 100 * d.montoTotal).toFixed(2)) :
+            d.distribucion === "individual" ? d.montoTotal :
+            parseFloat((d.montoTotal / deptos.length).toFixed(2));
+          const monto = pendiente;
           return <div key={d.id} className="flex justify-between text-sm py-1 border-b border-amber-100 last:border-0"><span>{d.titulo}</span><span className="font-bold text-amber-700">{fmt(monto)}</span></div>;
         })}
       </div>}
