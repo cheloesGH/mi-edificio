@@ -3462,7 +3462,13 @@ export default function App() {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const { data: usr } = await supabase.from('usuarios').select('*').eq('auth_id', session.user.id).eq('activo', true).single();
-        if (usr) setUsuario({ ...usr, user: usr.usuario, deptos: usr.deptos || [], modulos: usr.modulos || [], permisos: usr.permisos || {} });
+        if (usr) {
+          const u = { ...usr, user: usr.usuario, deptos: usr.deptos || [], modulos: usr.modulos || [], permisos: usr.permisos || {} };
+          setUsuario(u);
+          // Restaurar tab correcto según rol — propietario va a "portal", nunca a "dashboard"
+          const tabInicial = PERMS[u.rol]?.[0] || "dashboard";
+          setTab(tabInicial);
+        }
         await cargarDatos();
       } else {
         setCargando(false);
@@ -3674,6 +3680,13 @@ export default function App() {
     : (PERMS[usuario.rol] || []);
   const tabs = ALL_TABS.filter(t => tabsIds.includes(t.id));
 
+  // ── Guardia de seguridad: si el tab activo no está permitido para este rol, redirigir ──
+  if (tab && !tabsIds.includes(tab)) {
+    const tabSeguro = tabsIds[0] || "portal";
+    // Usar setTimeout para evitar setState durante render
+    setTimeout(() => setTab(tabSeguro), 0);
+  }
+
   // Helper: nivel de acceso para un módulo
   const nivelAcceso = (modId) => {
     if (usuario.permisos && usuario.permisos[modId]) return usuario.permisos[modId];
@@ -3834,16 +3847,16 @@ export default function App() {
 
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
-          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} appName={config.nombre_edificio} />}
-          {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
-          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} actualizarContador={actualizarContador} />}
-          {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} actualizarContador={actualizarContador} />}
-          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} actualizarContador={actualizarContador} />}
-          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} actualizarContador={actualizarContador} />}
-          {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
+          {tab === "dashboard" && tabsIds.includes("dashboard") && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} appName={config.nombre_edificio} />}
+          {tab === "periodos" && tabsIds.includes("periodos") && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
+          {tab === "pagos" && tabsIds.includes("pagos") && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} actualizarContador={actualizarContador} />}
+          {tab === "propiedades" && tabsIds.includes("propiedades") && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
+          {tab === "derramas" && tabsIds.includes("derramas") && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} actualizarContador={actualizarContador} />}
+          {tab === "egresos" && tabsIds.includes("egresos") && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} actualizarContador={actualizarContador} />}
+          {tab === "otros_ingresos" && tabsIds.includes("otros_ingresos") && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} actualizarContador={actualizarContador} />}
+          {tab === "usuarios" && tabsIds.includes("usuarios") && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
-          {tab === "configuracion" && <Configuracion config={config} setConfig={setConfig} />}
+          {tab === "configuracion" && tabsIds.includes("configuracion") && <Configuracion config={config} setConfig={setConfig} />}
         </main>
 
         {/* ── NAV MÓVIL inferior fija ── */}
