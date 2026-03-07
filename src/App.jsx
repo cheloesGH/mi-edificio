@@ -3531,6 +3531,81 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const { pendientes, sincronizando, ultimaSync, resultadoSync, ejecutarSync, actualizarContador } = useSync(online, cargarDatos);
 
+  // ── Supabase Realtime: sincronización entre terminales ──────────────────────
+  useEffect(() => {
+    // Esperar a que haya sesión activa e internet
+    if (!usuario?.id || !online) return;
+
+    // Adaptar registro entrante al formato interno de la app
+    const adaptarPago = p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] });
+
+    // Usar un nombre de canal único por sesión para evitar conflictos
+    const channelName = `realtime-edificio-${usuario.id}`;
+    console.log('🔌 Iniciando Realtime canal:', channelName);
+
+    const channel = supabase
+      .channel(channelName)
+
+      // ── PAGOS ──
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pagos' }, ({ new: row }) => {
+        setPagos(prev => prev.some(p => p.id === row.id) ? prev : [...prev, adaptarPago(row)]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pagos' }, ({ new: row }) => {
+        setPagos(prev => prev.map(p => p.id === row.id ? { ...p, ...adaptarPago(row) } : p));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pagos' }, ({ old: row }) => {
+        setPagos(prev => prev.filter(p => p.id !== row.id));
+      })
+
+      // ── EGRESOS ──
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'egresos' }, ({ new: row }) => {
+        setEgresos(prev => prev.some(e => e.id === row.id) ? prev : [...prev, row]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'egresos' }, ({ new: row }) => {
+        setEgresos(prev => prev.map(e => e.id === row.id ? { ...e, ...row } : e));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'egresos' }, ({ old: row }) => {
+        setEgresos(prev => prev.filter(e => e.id !== row.id));
+      })
+
+      // ── OTROS INGRESOS ──
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'otros_ingresos' }, ({ new: row }) => {
+        setOtrosIngresos(prev => prev.some(i => i.id === row.id) ? prev : [...prev, { ...row, cat: row.categoria }]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'otros_ingresos' }, ({ new: row }) => {
+        setOtrosIngresos(prev => prev.map(i => i.id === row.id ? { ...i, ...row, cat: row.categoria } : i));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'otros_ingresos' }, ({ old: row }) => {
+        setOtrosIngresos(prev => prev.filter(i => i.id !== row.id));
+      })
+
+      // ── DERRAMAS ──
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'derramas' }, ({ new: row }) => {
+        setDerramas(prev => prev.some(d => d.id === row.id) ? prev : [...prev, { ...row, montoTotal: parseFloat(row.monto_total) }]);
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'derramas' }, ({ new: row }) => {
+        setDerramas(prev => prev.map(d => d.id === row.id ? { ...d, ...row, montoTotal: parseFloat(row.monto_total) } : d));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'derramas' }, ({ old: row }) => {
+        setDerramas(prev => prev.filter(d => d.id !== row.id));
+      })
+
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Realtime conectado');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Realtime error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('⏱ Realtime timeout — reintentando...');
+        } else {
+          console.log('Realtime status:', status);
+        }
+      });
+
+    // Limpiar suscripción al desmontar o perder conexión
+    return () => { supabase.removeChannel(channel); };
+  }, [usuario?.id, online]); // re-runs when user logs in or connectivity changes
+
   const login = async (u) => { setUsuario(u); setTab(PERMS[u.rol]?.[0] || "dashboard"); await cargarDatos(); };
   const logout = async () => {
     if (!navigator.onLine) {
