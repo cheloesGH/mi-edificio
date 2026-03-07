@@ -342,10 +342,11 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
     setDistribuirModal(true);
   };
 
-  // Al confirmar: monto para cuota actual es lo que quedó después de cubrir deudas
+  // Al confirmar: enviar monto para cuota actual + distribucion de otras cuotas + montoTotal para manejo de remanente
   const submit = () => {
     onConfirm({
       monto: distribuirModal ? montoParaCuotaActual : Math.min(montoN, saldo),
+      montoTotal: montoN, // monto total ingresado para calcular remanente
       metodo, imagen,
       distribucion: distribuirModal ? distribucion : []
     });
@@ -1580,7 +1581,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
     return true;
   }), [pagos, fDer, derramas]);
 
-  const registrarAbono = async (cuotaId, { monto, metodo, imagen, distribucion = [] }, isDerrama = false, cuotaVirtual = null) => {
+  const registrarAbono = async (cuotaId, { monto, montoTotal, metodo, imagen, distribucion = [] }, isDerrama = false, cuotaVirtual = null) => {
     // Comprimir imagen siempre
     if (imagen) imagen = await comprimirImagen(imagen);
     let pagosActualizados = [...pagos];
@@ -1641,7 +1642,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
       setTimeout(() => setComprobante({ cuota: upd, abono: abonos[abonos.length - 1] }), 100);
     }
 
-    // ── Distribuir excedente a cuotas pendientes del mismo propietario
+    // ── Distribuir a cuotas de la distribución (anteriores y posteriores)
     if (distribucion.length > 0) {
       for (const d of distribucion) {
         const p = pagosActualizados.find(x => x.id === d.id);
@@ -1651,6 +1652,39 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
         const estado = montoPagado >= p.montoTotal ? "pagado" : "parcial";
         await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', p.id);
         pagosActualizados = pagosActualizados.map(x => x.id === p.id ? { ...p, abonos, montoPagado, estado } : x);
+      }
+    }
+
+    // ── Distribuir remanente a meses posteriores pendientes no cubiertos
+    // Aplica cuando el monto total supera lo asignado a cuota actual + distribución
+    if (montoTotal) {
+      const totalAsignado = parseFloat((monto + distribucion.reduce((a, d) => a + d.asignar, 0)).toFixed(2));
+      let remanente = parseFloat((montoTotal - totalAsignado).toFixed(2));
+      if (remanente > 0.009) {
+        // Buscar cuotas pendientes/parciales del mismo depto no cubiertas en la distribución
+        const idsYaCubiertos = new Set([cuotaId, ...distribucion.map(d => d.id)]);
+        const cuotaBase = pagosActualizados.find(p => p.id === cuotaId);
+        const pendientesPosteriores = pagosActualizados
+          .filter(p =>
+            p.deptoId === cuotaBase?.deptoId &&
+            !idsYaCubiertos.has(p.id) &&
+            p.estado !== "pagado" &&
+            p.tipo === "ordinario"
+          )
+          .sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
+
+        for (const p of pendientesPosteriores) {
+          if (remanente <= 0.009) break;
+          const saldoP = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
+          const asignar = parseFloat(Math.min(saldoP, remanente).toFixed(2));
+          if (asignar <= 0) continue;
+          const abonos = [...(p.abonos || []), { id: (p.abonos || []).length + 1, monto: asignar, fecha: todayStr(), metodo, imagen: null }];
+          const montoPagado = parseFloat((p.montoPagado + asignar).toFixed(2));
+          const estado = montoPagado >= p.montoTotal ? "pagado" : "parcial";
+          await supabase.from('pagos').update({ monto_pagado: montoPagado, estado, abonos }).eq('id', p.id);
+          pagosActualizados = pagosActualizados.map(x => x.id === p.id ? { ...p, abonos, montoPagado, estado } : x);
+          remanente = parseFloat((remanente - asignar).toFixed(2));
+        }
       }
     }
     setPagos(pagosActualizados);
