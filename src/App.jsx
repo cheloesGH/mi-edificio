@@ -1669,7 +1669,12 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
   const estadoBadge = p => {
     const saldo = parseFloat((p.montoTotal - p.montoPagado).toFixed(2));
     if (p.estado === "pagado") return <button onClick={() => rol !== "lectura" && setRevertir(p.id)} className={`px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 ${rol !== "lectura" ? "hover:bg-rose-100 hover:text-rose-700 transition" : ""}`}>✅ Pagado{rol !== "lectura" ? " ✎" : ""}</button>;
-    if (p.estado === "parcial") return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 transition">💧 Parcial · {fmt(saldo)}</button>;
+    if (p.estado === "parcial") return (
+      <div className="flex items-center gap-1">
+        <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 transition">💧 Parcial · {fmt(saldo)}</button>
+        {rol !== "lectura" && <button onClick={() => setRevertir(p.id)} className="px-1.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition" title="Revertir abonos">↩</button>}
+      </div>
+    );
     return <button onClick={() => setModal(p)} className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 transition">⏳ Pendiente →</button>;
   };
 
