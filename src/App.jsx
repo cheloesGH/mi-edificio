@@ -107,7 +107,7 @@ function Confirm({ msg, onYes, onNo }) {
 // ─── MODAL CONFIRMACIÓN (reemplaza confirm() nativo que falla en móvil PWA) ──
 function ModalConfirm({ mensaje, onOk, onCancel, okLabel = "Eliminar", okColor = "bg-rose-600 hover:bg-rose-700" }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999] p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4">
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
         <div className="text-center">
           <div className="text-4xl mb-3">⚠️</div>
@@ -367,10 +367,10 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
         </div>
         <div>
           <label className="text-xs text-slate-500 mb-1 block">Imagen comprobante (opcional)</label>
-          <div onClick={() => fileRef.current.click()} className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300">
+          <label htmlFor="modal-pago-img" className="block border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300">
             {preview ? <img src={preview} alt="" className="max-h-24 mx-auto rounded-lg object-contain" /> : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>}
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImg} />
+          </label>
+          <input id="modal-pago-img" ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImg} />
         </div>
         {cuota.abonos?.length > 0 && (
           <div>
@@ -1678,12 +1678,11 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
             <h3 className="font-bold text-lg">📷 Editar imagen soporte</h3>
-            <div onClick={() => document.getElementById('edit-img-input').click()}
-              className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300 transition-colors">
+            <label htmlFor="edit-img-input" className="block border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-indigo-300 transition-colors">
               {editImagen.preview
                 ? <img src={editImagen.preview} alt="soporte" className="max-h-32 mx-auto rounded-lg object-contain" />
                 : <div className="text-slate-400 text-sm py-4">📎 Seleccionar nueva imagen</div>}
-            </div>
+            </label>
             <input id="edit-img-input" type="file" accept="image/*" className="hidden" onChange={e => {
               const f = e.target.files[0]; if (!f) return;
               const r = new FileReader(); r.onload = ev => setEditImagen({ ...editImagen, preview: ev.target.result }); r.readAsDataURL(f);
@@ -2447,12 +2446,11 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
             )}
             <div>
               <label className="text-xs text-slate-500 mb-1 block">Soporte (foto/imagen)</label>
-              <div onClick={() => document.getElementById('oi-file-input').click()}
-                className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-emerald-300 transition-colors">
+              <label htmlFor="oi-file-input" className="block border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-emerald-300 transition-colors">
                 {form.soporte
                   ? <img src={form.soporte} alt="soporte" className="max-h-24 mx-auto rounded-lg object-contain" />
                   : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>}
-              </div>
+              </label>
               <input id="oi-file-input" type="file" accept="image/*" className="hidden" onChange={e => {
                 const f = e.target.files[0]; if (!f) return;
                 const r = new FileReader(); r.onload = ev => setForm(fm => ({ ...fm, soporte: ev.target.result })); r.readAsDataURL(f);
@@ -2789,13 +2787,12 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
             
             <div>
               <label className="text-xs text-slate-500 mb-1 block">Soporte (foto/imagen)</label>
-              <div onClick={() => document.getElementById('egresos-file-input').click()}
-                className="border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-rose-300 transition-colors">
+              <label htmlFor="egresos-file-input" className="block border-2 border-dashed border-slate-200 rounded-xl p-3 text-center cursor-pointer hover:border-rose-300 transition-colors">
                 {form.soporte
                   ? <img src={form.soporte} alt="soporte" className="max-h-24 mx-auto rounded-lg object-contain" />
                   : <div className="text-slate-400 text-sm py-2">📎 Subir imagen o tomar foto</div>
                 }
-              </div>
+              </label>
               <input id="egresos-file-input" type="file" accept="image/*" className="hidden" onChange={e => {
                 const f = e.target.files?.[0];
                 if (!f) return;
@@ -3287,10 +3284,10 @@ function Configuracion({ config, setConfig }) {
                 : <span className="text-3xl">🏢</span>}
             </div>
             <div className="space-y-2 flex-1">
-              <button onClick={() => document.getElementById('logo-input').click()}
-                className="w-full border-2 border-dashed border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition text-center cursor-pointer">
+              <label htmlFor="logo-input"
+                className="block w-full border-2 border-dashed border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition text-center cursor-pointer">
                 📎 Subir logo o foto
-              </button>
+              </label>
               <input id="logo-input" type="file" accept="image/*" className="hidden" onChange={e => {
                 const f = e.target.files[0]; if (!f) return;
                 const r = new FileReader();
