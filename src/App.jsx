@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { useConectividad, useSync, useCacheDatos } from "./useOffline";
-import { encolarOperacion, guardarImagenOffline, genLocalId, comprimirImagen, isOnline } from "./offlineEngine";
+import { encolarOperacion, guardarImagenOffline, genLocalId, comprimirImagen } from "./offlineEngine";
 
 // ── Edge Function helper para operaciones admin seguras
 const adminUsers = async (action, params) => {
@@ -1430,7 +1430,8 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
 }
 
 // ─── PAGOS ────────────────────────────────────────────────────────────────────
-function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
+function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, actualizarContador }) {
+  const online = useConectividad();
   const [tabP, setTabP] = useState("ordinarios");
   const [modal, setModal] = useState(null);
   const [comprobante, setComprobante] = useState(null);
@@ -1502,7 +1503,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const abonos = [...(ex.abonos || []), { id: (ex.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
         const montoPagado = parseFloat((ex.montoPagado + monto).toFixed(2));
         const estado = montoPagado >= ex.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-        if (!isOnline()) {
+        if (!online) {
           const lid = genLocalId();
           await guardarImagenOffline(lid, imagen);
           await encolarOperacion({ modulo:'pagos', operacion:'update', payload:{ id: ex.id, monto_pagado: montoPagado, estado, abonos }, imagenKey: imagen ? lid : null });
@@ -1520,7 +1521,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
         const estado = montoPagado >= cuotaVirtual.montoTotal ? "pagado" : "parcial";
         const nuevo = { tipo: "derrama", depto_id: cuotaVirtual.deptoId, depto: cuotaVirtual.depto, periodo_id: cuotaVirtual.periodoId, periodo_nombre: cuotaVirtual.periodoNombre, mes: cuotaVirtual.mes, anio: cuotaVirtual.anio, monto_total: cuotaVirtual.montoTotal, monto_pagado: montoPagado, estado, abonos, concepto: cuotaVirtual.concepto };
         let nw;
-        if (!isOnline()) {
+        if (!online) {
           const lid = genLocalId();
           await guardarImagenOffline(lid, imagen);
           await encolarOperacion({ modulo:'pagos', operacion:'insert', payload: nuevo, imagenKey: imagen ? lid : null });
@@ -1539,7 +1540,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol }) {
       const abonos = [...(pago.abonos || []), { id: (pago.abonos || []).length + 1, monto, fecha: todayStr(), metodo, imagen }];
       const montoPagado = parseFloat((pago.montoPagado + monto).toFixed(2));
       const estado = montoPagado >= pago.montoTotal ? "pagado" : montoPagado > 0 ? "parcial" : "pendiente";
-      if (!isOnline()) {
+      if (!online) {
         const lid = genLocalId();
         await guardarImagenOffline(lid, imagen);
         await encolarOperacion({ modulo:'pagos', operacion:'update', payload:{ id: cuotaId, monto_pagado: montoPagado, estado, abonos }, imagenKey: imagen ? lid : null });
@@ -2038,7 +2039,8 @@ const guardar = async () => {
 }
 
 // ─── DERRAMAS ────────────────────────────────────────────────────────────────
-function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [], periodos = [], pagos = [], setPagos }) {
+function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [], periodos = [], pagos = [], setPagos, actualizarContador }) {
+  const online = useConectividad();
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
@@ -2060,7 +2062,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
     const payload = { titulo: form.titulo, descripcion: form.descripcion, monto_total: Number(form.montoTotal), mes: Number(form.mes), anio: Number(form.anio), distribucion: form.distribucion, depto_id: form.distribucion === "individual" ? Number(form.deptoId) : null };
 
     if (editId) {
-      if (!isOnline()) {
+      if (!online) {
         await encolarOperacion({ modulo:'derramas', operacion:'update', payload:{ id: editId, ...payload }, imagenKey: null });
         await actualizarContador();
         setDerramas(derramas.map(d => d.id === editId ? { ...d, ...payload, montoTotal: Number(form.montoTotal) } : d));
@@ -2084,7 +2086,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
       setDerramas(derramas.map(d => d.id === editId ? { ...d, ...payload, montoTotal: Number(form.montoTotal) } : d));
     } else {
       const nueva = { ...payload, fecha: todayStr(), estado: "activa" };
-      if (!isOnline()) {
+      if (!online) {
         const lid = genLocalId();
         await encolarOperacion({ modulo:'derramas', operacion:'insert', payload: nueva, imagenKey: null });
         await actualizarContador();
@@ -2213,7 +2215,8 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
 
 
 // ─── OTROS INGRESOS ──────────────────────────────────────────────────────────
-function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false }) {
+function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false, actualizarContador }) {
+  const online = useConectividad();
   const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
@@ -2269,7 +2272,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
     // Comprimir imagen siempre
     if (payload.soporte) payload.soporte = await comprimirImagen(payload.soporte);
     if (editId) {
-      if (!isOnline()) {
+      if (!online) {
         await encolarOperacion({ modulo:'otros_ingresos', operacion:'update', payload:{ id: editId, ...payload }, imagenKey: null });
         await actualizarContador();
         setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
@@ -2279,7 +2282,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
         setOtrosIngresos(otrosIngresos.map(i => i.id === editId ? { ...i, ...payload, cat: payload.categoria } : i));
       }
     } else {
-      if (!isOnline()) {
+      if (!online) {
         const lid = genLocalId();
         await encolarOperacion({ modulo:'otros_ingresos', operacion:'insert', payload, imagenKey: null });
         await actualizarContador();
@@ -2599,7 +2602,8 @@ function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
 }
 
 // ─── EGRESOS ──────────────────────────────────────────────────────────────────
-function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false }) {
+function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, actualizarContador }) {
+  const online = useConectividad();
   const periodosSorted = useMemo(() => [...periodos].sort((a,b) => a.anio !== b.anio ? a.anio-b.anio : a.mes-b.mes), [periodos]);
   const lastPer = periodosSorted[periodosSorted.length - 1];
   const ult3 = useMemo(() => [...periodosSorted].reverse().slice(0, 3), [periodosSorted]);
@@ -2649,7 +2653,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
     if (payload.soporte) payload.soporte = await comprimirImagen(payload.soporte);
     if (editId) {
       const fullPayload = { ...payload, mes, anio, fecha };
-      if (!isOnline()) {
+      if (!online) {
         await encolarOperacion({ modulo:'egresos', operacion:'update', payload:{ id: editId, ...fullPayload }, imagenKey: null });
         await actualizarContador();
         setEgresos(egresos.map(e => e.id === editId ? { ...e, ...fullPayload } : e));
@@ -2662,7 +2666,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false })
       const duplicado = egresos.find(e => e.concepto.trim().toLowerCase() === form.concepto.trim().toLowerCase() && e.mes === mes && e.anio === anio);
       if (duplicado) { alert(`Ya existe un egreso con el concepto "${form.concepto}" en este período.`); return; }
       const nuevo = { ...payload, mes, anio, fecha };
-      if (!isOnline()) {
+      if (!online) {
         const lid = genLocalId();
         await encolarOperacion({ modulo:'egresos', operacion:'insert', payload: nuevo, imagenKey: null });
         await actualizarContador();
@@ -3644,11 +3648,11 @@ export default function App() {
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
           {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} appName={config.nombre_edificio} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
-          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} />}
+          {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} actualizarContador={actualizarContador} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
-          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} />}
-          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} />}
-          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} />}
+          {tab === "derramas" && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} actualizarContador={actualizarContador} />}
+          {tab === "egresos" && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} actualizarContador={actualizarContador} />}
+          {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} actualizarContador={actualizarContador} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
           {tab === "configuracion" && <Configuracion config={config} setConfig={setConfig} />}
