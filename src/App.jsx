@@ -447,7 +447,7 @@ function Login({ onLogin, appName = "Mi Edificio", logo = null }) {
             {logo ? <img src={logo} alt="logo" className="w-full h-full object-cover" /> : <span>🏢</span>}
           </div>
           <h1 className="text-2xl font-bold text-slate-800">{appName}</h1>
-          <p className="text-slate-400 text-sm">Sistema de Administración v3.1</p>
+          <p className="text-slate-400 text-sm">Sistema de Administración v1.0</p>
         </div>
         <div className="space-y-3">
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" type="email" onKeyDown={e => e.key === "Enter" && go()} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400" />
