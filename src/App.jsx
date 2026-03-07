@@ -143,7 +143,7 @@ function ModalConfirm({ mensaje, onOk, onCancel, okLabel = "Eliminar", okColor =
 }
 
 // ─── COMPROBANTE ──────────────────────────────────────────────────────────────
-function Comprobante({ cuota, abono, depto, onClose, appName = "Mi Edificio" }) {
+function Comprobante({ cuota, abono, depto, onClose, appName = "Mi Edificio", logo = null }) {
   const nro = `#${String(abono?.id || 1).padStart(6, "0")}`;
   const saldo = Math.max(0, cuota.montoTotal - cuota.montoPagado);
   const filas = [
@@ -173,7 +173,8 @@ function Comprobante({ cuota, abono, depto, onClose, appName = "Mi Edificio" }) 
       .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
       @media print{body{padding:8px}}
     </style></head><body>
-    <h2>🏢 ${appName}</h2>
+    ${logo ? `<div style="text-align:center;margin-bottom:8px"><img src="${logo}" style="width:64px;height:64px;border-radius:14px;object-fit:cover" /></div>` : '<div style="text-align:center;font-size:36px;margin-bottom:8px">🏢</div>'}
+    <h2>${appName}</h2>
     <p class="sub">Comprobante Oficial de Pago</p>
     <div class="box">
       ${filas.map(([l,v])=>`<div class="fila"><span>${l}</span><span>${v}</span></div>`).join("")}
@@ -1519,7 +1520,7 @@ function Periodos({ periodos, setPeriodos, deptos, pagos, setPagos, egresos }) {
 }
 
 // ─── PAGOS ────────────────────────────────────────────────────────────────────
-function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, actualizarContador }) {
+function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, actualizarContador, appName = "Mi Edificio", logo = null }) {
   const online = useConectividad();
   const [tabP, setTabP] = useState("ordinarios");
   const [modal, setModal] = useState(null);
@@ -1765,7 +1766,7 @@ function Pagos({ pagos, setPagos, periodos, deptos, derramas, usuarios, rol, act
   return (
     <div className="space-y-4">
       {modalEditMonto}
-      {comprobante && <Comprobante cuota={comprobante.cuota} abono={comprobante.abono} depto={usuarios.find(u => u.deptos?.includes(comprobante.cuota.deptoId))} onClose={() => setComprobante(null)} />}
+      {comprobante && <Comprobante cuota={comprobante.cuota} abono={comprobante.abono} depto={usuarios.find(u => u.deptos?.includes(comprobante.cuota.deptoId))} onClose={() => setComprobante(null)} appName={appName} logo={logo} />}
       {/* ── Modal ver imagen ── */}
       {imgView && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
@@ -2364,7 +2365,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
 
 
 // ─── OTROS INGRESOS ──────────────────────────────────────────────────────────
-function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false, actualizarContador }) {
+function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false, actualizarContador, appName = "Mi Edificio", logo = null }) {
   const online = useConectividad();
   const [confirmEl, setConfirmEl] = useState(null);
   const [toast, setToast] = useState(null);
@@ -2475,7 +2476,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
           onOk={async () => { await eliminar(confirmEl.id); setConfirmEl(null); }}
         />
       )}
-      {comprobante && <ComprobanteOI ingreso={comprobante} onClose={() => setComprobante(null)} />}
+      {comprobante && <ComprobanteOI ingreso={comprobante} onClose={() => setComprobante(null)} appName={appName} logo={logo} />}
       {imgView && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[999] p-4" onClick={() => setImgView(null)}>
           <div className="relative max-w-lg w-full">
@@ -2652,7 +2653,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
 }
 
 // ─── COMPROBANTE OTROS INGRESOS ───────────────────────────────────────────────
-function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
+function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio", logo = null }) {
   const nro = String(ingreso.id).padStart(6, "0");
   const catIcon = c => c === "Arriendo Local" ? "🏪" : c === "Arriendo Parqueadero" ? "🚗" : "📦";
   const cat = ingreso.cat || ingreso.categoria;
@@ -2672,7 +2673,7 @@ function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
     .total .value{font-weight:800;font-size:18px;color:#059669}
     .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
   </style></head><body>
-  <div style="text-align:center;font-size:36px;margin-bottom:8px">🏢</div>
+  ${logo ? `<div style="text-align:center;margin-bottom:8px"><img src="${logo}" style="width:64px;height:64px;border-radius:14px;object-fit:cover" /></div>` : '<div style="text-align:center;font-size:36px;margin-bottom:8px">🏢</div>'}
   <h2>${appName}</h2>
   <p class="sub">Comprobante de Ingreso Oficial</p>
   <div class="box">
@@ -3958,11 +3959,11 @@ export default function App() {
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
           {tab === "dashboard" && tabsIds.includes("dashboard") && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} appName={config.nombre_edificio} />}
           {tab === "periodos" && tabsIds.includes("periodos") && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
-          {tab === "pagos" && tabsIds.includes("pagos") && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} actualizarContador={actualizarContador} />}
+          {tab === "pagos" && tabsIds.includes("pagos") && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} actualizarContador={actualizarContador} appName={config.nombre_edificio} logo={config.logo} />}
           {tab === "propiedades" && tabsIds.includes("propiedades") && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
           {tab === "derramas" && tabsIds.includes("derramas") && <Derramas derramas={derramas} setDerramas={setDerramas} deptos={deptos} rol={puedeEscribir("derramas") ? "admin" : "lectura"} canDelete={puedeEliminar("derramas")} usuarios={usuarios} periodos={periodos} pagos={pagos} setPagos={setPagos} actualizarContador={actualizarContador} />}
           {tab === "egresos" && tabsIds.includes("egresos") && <Egresos egresos={egresos} setEgresos={setEgresos} rol={puedeEscribir("egresos") ? "admin" : "lectura"} canDelete={puedeEliminar("egresos")} periodos={periodos} actualizarContador={actualizarContador} />}
-          {tab === "otros_ingresos" && tabsIds.includes("otros_ingresos") && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} actualizarContador={actualizarContador} />}
+          {tab === "otros_ingresos" && tabsIds.includes("otros_ingresos") && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} actualizarContador={actualizarContador} appName={config.nombre_edificio} logo={config.logo} />}
           {tab === "usuarios" && tabsIds.includes("usuarios") && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
           {tab === "configuracion" && tabsIds.includes("configuracion") && <Configuracion config={config} setConfig={setConfig} />}
