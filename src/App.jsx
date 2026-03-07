@@ -2235,7 +2235,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
             if (!online) {
               await encolarOperacion({ modulo: 'derramas', operacion: 'delete', payload: { id, titulo }, imagenKey: null });
               await actualizarContador();
-              setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+              setToast("Eliminado — se aplicará al restablecer la conexión");
               return;
             }
             await supabase.from('pagos').delete().eq('periodo_nombre', titulo).eq('tipo', 'derrama');
@@ -2362,7 +2362,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
     if (!online) {
       await encolarOperacion({ modulo: 'otros_ingresos', operacion: 'delete', payload: { id }, imagenKey: null });
       await actualizarContador();
-      setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+      setToast("Eliminado — se aplicará al restablecer la conexión");
       return;
     }
     const { error } = await supabase.from("otros_ingresos").delete().eq("id", id);
@@ -2770,7 +2770,7 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
             if (!online) {
               await encolarOperacion({ modulo: 'egresos', operacion: 'delete', payload: { id }, imagenKey: null });
               await actualizarContador();
-              setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+              setToast("Eliminado — se aplicará al restablecer la conexión");
               return;
             }
             const { error } = await supabase.from('egresos').delete().eq('id', id);
@@ -3612,7 +3612,7 @@ export default function App() {
               <p className="text-white/60 text-xs mt-2">👤 {usuario?.nombre}</p>
             </div>
             <div className="bg-amber-500/20 border border-amber-400/30 rounded-xl px-4 py-2">
-              <p className="text-amber-200 text-xs">📶 Sin conexión — tus datos están guardados localmente</p>
+              <p className="text-amber-200 text-xs">📶 Sin conexión — tus cambios están guardados</p>
             </div>
             <div className="space-y-3">
               <input
@@ -3639,13 +3639,13 @@ export default function App() {
         <div className={`fixed top-0 left-0 right-0 z-50 text-xs text-white px-4 py-2 flex items-center justify-between gap-3 transition-all
           ${!online ? 'bg-amber-600' : sincronizando ? 'bg-indigo-600' : resultadoSync?.errores > 0 ? 'bg-rose-600' : 'bg-emerald-600'}`}>
           <span>
-            {!online && pendientes === 0 && '📶 Sin conexión — los datos se guardan localmente'}
+            {!online && pendientes === 0 && '📶 Sin conexión — puedes seguir trabajando con normalidad'}
             {!online && pendientes > 0 && `📶 Sin conexión — ${pendientes} cambio${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''} de sincronizar`}
-            {online && sincronizando && '🔄 Sincronizando cambios con el servidor...'}
+            {online && sincronizando && '🔄 Aplicando cambios pendientes...'}
             {online && !sincronizando && resultadoSync && resultadoSync.errores === 0 &&
               `✅ Sincronización completa — ${resultadoSync.sincronizados} guardado${resultadoSync.sincronizados !== 1 ? 's' : ''}${resultadoSync.omitidos > 0 ? `, ${resultadoSync.omitidos} omitido${resultadoSync.omitidos !== 1 ? 's' : ''} (duplicado${resultadoSync.omitidos !== 1 ? 's' : ''})` : ''}`}
             {online && !sincronizando && resultadoSync && resultadoSync.errores > 0 &&
-              `⚠️ ${resultadoSync.errores} error${resultadoSync.errores !== 1 ? 'es' : ''} al sincronizar`}
+              `⚠️ ${resultadoSync.errores} cambio${resultadoSync.errores !== 1 ? 's' : ''} no pudieron aplicarse`}
             {online && !sincronizando && !resultadoSync && pendientes > 0 &&
               `⏳ ${pendientes} cambio${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''}`}
           </span>
