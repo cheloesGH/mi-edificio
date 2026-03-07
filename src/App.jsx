@@ -105,6 +105,20 @@ function Confirm({ msg, onYes, onNo }) {
 
 
 // ─── MODAL CONFIRMACIÓN (reemplaza confirm() nativo que falla en móvil PWA) ──
+// ─── TOAST OFFLINE ───────────────────────────────────────────────────────────
+function ToastOffline({ mensaje, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] bg-amber-600 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 whitespace-nowrap">
+      <span>📶</span>
+      <span>{mensaje}</span>
+    </div>
+  );
+}
+
 function ModalConfirm({ mensaje, onOk, onCancel, okLabel = "Eliminar", okColor = "bg-rose-600 hover:bg-rose-700" }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999] p-4">
@@ -2066,6 +2080,7 @@ const guardar = async () => {
 function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuarios = [], periodos = [], pagos = [], setPagos, actualizarContador }) {
   const online = useConectividad();
   const [confirmDerrama, setConfirmDerrama] = useState(null);
+  const [toast, setToast] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ titulo: "", descripcion: "", montoTotal: "", distribucion: "igual", mes: today.m, anio: today.y, deptoId: "" });
@@ -2206,17 +2221,26 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
           </div>
         </div>
       )}
+      {toast && <ToastOffline mensaje={toast} onClose={() => setToast(null)} />}
       {confirmDerrama && (
         <ModalConfirm
           mensaje={`¿Eliminar la derrama "${confirmDerrama.titulo}"? También se eliminarán los pagos asociados.`}
           onCancel={() => setConfirmDerrama(null)}
           onOk={async () => {
-            await supabase.from('pagos').delete().eq('periodo_nombre', confirmDerrama.titulo).eq('tipo', 'derrama');
-            const { error } = await supabase.from('derramas').delete().eq('id', confirmDerrama.id);
-            if (error) { alert("Error al eliminar: " + error.message); setConfirmDerrama(null); return; }
-            setDerramas(derramas.filter(x => x.id !== confirmDerrama.id));
-            setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === confirmDerrama.titulo)));
+            const { id, titulo } = confirmDerrama;
             setConfirmDerrama(null);
+            // Optimistic: remove from UI immediately
+            setDerramas(prev => prev.filter(x => x.id !== id));
+            setPagos(prev => prev.filter(p => !(p.tipo === 'derrama' && p.periodoNombre === titulo)));
+            if (!online) {
+              await encolarOperacion({ modulo: 'derramas', operacion: 'delete', payload: { id, titulo }, imagenKey: null });
+              await actualizarContador();
+              setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+              return;
+            }
+            await supabase.from('pagos').delete().eq('periodo_nombre', titulo).eq('tipo', 'derrama');
+            const { error } = await supabase.from('derramas').delete().eq('id', id);
+            if (error) { alert("Error al eliminar: " + error.message); }
           }}
         />
       )}
@@ -2250,6 +2274,7 @@ function Derramas({ derramas, setDerramas, deptos, rol, canDelete = false, usuar
 function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodos = [], canDelete = false, actualizarContador }) {
   const online = useConectividad();
   const [confirmEl, setConfirmEl] = useState(null);
+  const [toast, setToast] = useState(null);
   const CATS_OI = ["Arriendo Local", "Arriendo Parqueadero", "Otro"];
   const lastPer = periodos[periodos.length - 1];
   const [filters, setFilters] = useState({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", pagador: "" });
@@ -2332,9 +2357,16 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
   };
 
   const eliminar = async (id) => {
+    // Optimistic: remove from UI immediately
+    setOtrosIngresos(prev => prev.filter(i => i.id !== id));
+    if (!online) {
+      await encolarOperacion({ modulo: 'otros_ingresos', operacion: 'delete', payload: { id }, imagenKey: null });
+      await actualizarContador();
+      setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+      return;
+    }
     const { error } = await supabase.from("otros_ingresos").delete().eq("id", id);
-    if (error) { alert("Error al eliminar: " + error.message); return; }
-    setOtrosIngresos(otrosIngresos.filter(i => i.id !== id));
+    if (error) { alert("Error al eliminar: " + error.message); }
   };
 
   const catIcon = c => c === "Arriendo Local" ? "🏪" : c === "Arriendo Parqueadero" ? "🚗" : "📦";
@@ -2342,6 +2374,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
 
   return (
     <div className="space-y-4">
+      {toast && <ToastOffline mensaje={toast} onClose={() => setToast(null)} />}
       {confirmEl && (
         <ModalConfirm
           mensaje="¿Eliminar este ingreso? Esta acción no se puede deshacer."
@@ -2643,6 +2676,7 @@ function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
 function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, actualizarContador }) {
   const online = useConectividad();
   const [confirmEl, setConfirmEl] = useState(null);
+  const [toast, setToast] = useState(null);
   const periodosSorted = useMemo(() => [...periodos].sort((a,b) => a.anio !== b.anio ? a.anio-b.anio : a.mes-b.mes), [periodos]);
   const lastPer = periodosSorted[periodosSorted.length - 1];
   const ult3 = useMemo(() => [...periodosSorted].reverse().slice(0, 3), [periodosSorted]);
@@ -2723,15 +2757,24 @@ function Egresos({ egresos, setEgresos, rol, periodos = [], canDelete = false, a
   const clearFilters = () => { setFilters({ mes: lastPer?.mes ?? today.m, anio: lastPer?.anio ?? today.y, cat: "todos", concepto: "" }); setPerSelected(lastPer?.id ?? null); };
   return (
     <div className="space-y-4">
+      {toast && <ToastOffline mensaje={toast} onClose={() => setToast(null)} />}
       {confirmEl && (
         <ModalConfirm
           mensaje="¿Estás seguro de borrar este egreso? Esta acción no se puede deshacer."
           onCancel={() => setConfirmEl(null)}
           onOk={async () => {
-            const { error } = await supabase.from('egresos').delete().eq('id', confirmEl.id);
-            if (error) { alert("No se pudo borrar el egreso."); setConfirmEl(null); return; }
-            setEgresos(egresos.filter(x => x.id !== confirmEl.id));
+            const id = confirmEl.id;
             setConfirmEl(null);
+            // Optimistic: remove from UI immediately
+            setEgresos(prev => prev.filter(x => x.id !== id));
+            if (!online) {
+              await encolarOperacion({ modulo: 'egresos', operacion: 'delete', payload: { id }, imagenKey: null });
+              await actualizarContador();
+              setToast("Eliminado localmente — se borrará en Supabase al reconectar");
+              return;
+            }
+            const { error } = await supabase.from('egresos').delete().eq('id', id);
+            if (error) { alert("No se pudo borrar el egreso."); await actualizarContador(); }
           }}
         />
       )}
