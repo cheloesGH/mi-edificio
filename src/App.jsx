@@ -102,7 +102,7 @@ function Confirm({ msg, onYes, onNo }) {
 }
 
 // ─── COMPROBANTE ──────────────────────────────────────────────────────────────
-function Comprobante({ cuota, abono, depto, onClose }) {
+function Comprobante({ cuota, abono, depto, onClose, appName = "Mi Edificio" }) {
   const nro = `#${String(abono?.id || 1).padStart(6, "0")}`;
   const saldo = Math.max(0, cuota.montoTotal - cuota.montoPagado);
   const filas = [
@@ -132,7 +132,7 @@ function Comprobante({ cuota, abono, depto, onClose }) {
       .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
       @media print{body{padding:8px}}
     </style></head><body>
-    <h2>🏢 Edificio Central</h2>
+    <h2>🏢 ${appName}</h2>
     <p class="sub">Comprobante Oficial de Pago</p>
     <div class="box">
       ${filas.map(([l,v])=>`<div class="fila"><span>${l}</span><span>${v}</span></div>`).join("")}
@@ -189,7 +189,7 @@ function Comprobante({ cuota, abono, depto, onClose }) {
 
   const enviarCorreo = () => {
     const cuerpo = [
-      "Comprobante de Pago - Edificio Central",
+      `Comprobante de Pago - ${appName}`,
       "─────────────────────────────",
       ...filas.map(([l, v]) => `${l}: ${v}`),
       "─────────────────────────────",
@@ -200,7 +200,7 @@ function Comprobante({ cuota, abono, depto, onClose }) {
       `Verificado: ${todayStr()}`,
     ].join("%0D%0A");
     const email = depto?.email || "";
-    window.open(`mailto:${email}?subject=Comprobante de Pago ${nro} - Edificio Central&body=${cuerpo}`);
+    window.open(`mailto:${email}?subject=Comprobante de Pago ${nro} - ${appName}&body=${cuerpo}`);
   };
 
   return (
@@ -209,7 +209,7 @@ function Comprobante({ cuota, abono, depto, onClose }) {
         <div id="comprobante-print">
           <div className="text-center mb-5">
             <div className="text-4xl mb-2">🏢</div>
-            <h2 className="text-xl font-bold text-slate-800">Edificio Central</h2>
+            <h2 className="text-xl font-bold text-slate-800">{appName}</h2>
             <p className="text-slate-400 text-sm">Comprobante Oficial de Pago</p>
           </div>
           <div className="border-2 border-dashed border-indigo-200 rounded-xl p-4 mb-4 space-y-2.5 text-sm bg-indigo-50">
@@ -368,7 +368,7 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function Login({ onLogin }) {
+function Login({ onLogin, appName = "Mi Edificio" }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
@@ -403,7 +403,7 @@ function Login({ onLogin }) {
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8">
         <div className="text-center mb-7">
           <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3">🏢</div>
-          <h1 className="text-2xl font-bold text-slate-800">Edificio Central</h1>
+          <h1 className="text-2xl font-bold text-slate-800">{appName}</h1>
           <p className="text-slate-400 text-sm">Sistema de Administración v3.1</p>
         </div>
         <div className="space-y-3">
@@ -422,7 +422,7 @@ function Login({ onLogin }) {
 
 
 // ─── INFORME FINANCIERO ──────────────────────────────────────────────────────
-function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos, onClose, otrosIngresos = [] }) {
+function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos, onClose, otrosIngresos = [], appName = "Mi Edificio" }) {
   const MESES_FULL = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   // ── Egresos del período
@@ -565,7 +565,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
       @media print{body{padding:12px}}
     </style></head><body>
 
-    <h1>🏢 Edificio Central — Informe Financiero</h1>
+    <h1>🏢 ${appName} — Informe Financiero</h1>
     <p class="sub">Período: <strong>${per?.nombre}</strong> &nbsp;·&nbsp; Generado: ${todayStr()}</p>
 
     <table>
@@ -658,7 +658,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
 
     </table>
 
-    <p class="footer">Informe generado automáticamente · Edificio Central · ${todayStr()}</p>
+    <p class="footer">Informe generado automáticamente · ${appName} · ${todayStr()}</p>
     </body></html>`;
   };
 
@@ -721,7 +721,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
 
   const enviarCorreo = () => {
     const lineas = [
-      `Informe Financiero - Edificio Central`,
+      `Informe Financiero - ${appName}`,
       `Período: ${per?.nombre}`,
       ``,
       `── EGRESOS ──`,
@@ -736,7 +736,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
       `Flujo mes anterior (${perAnterior?.nombre || "-"}): ${flujoAnt >= 0 ? "+" : ""}${fmt(flujoAnt)}`,
       `Flujo mes actual (${per?.nombre}): ${flujoAct >= 0 ? "+" : ""}${fmt(flujoAct)}`,
     ].join("%0D%0A");
-    window.open(`mailto:?subject=Informe Financiero ${per?.nombre} - Edificio Central&body=${lineas}`);
+    window.open(`mailto:?subject=Informe Financiero ${per?.nombre} - ${appName}&body=${lineas}`);
   };
 
   return (
@@ -904,7 +904,7 @@ function InformeFinanciero({ per, perAnterior, egresos, pagos, usuarios, deptos,
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab, otrosIngresos = [] }) {
+function Dashboard({ pagos, periodos, egresos, derramas, deptos, usuarios, setTab, otrosIngresos = [], appName = "Mi Edificio" }) {
   const [periodoId, setPeriodoId] = useState(periodos[periodos.length - 1]?.id);
   const [modal, setModal] = useState(null); // "ingresos" | "pendientes" | "morosos" | null
   const [morDetalle, setMorDetalle] = useState(null); // moroso seleccionado para ver desglose
@@ -1126,6 +1126,7 @@ const per = periodos.find(p => p.id === Number(periodoId)) || periodos[periodos.
           deptos={deptos}
           onClose={() => setShowInforme(false)}
           otrosIngresos={otrosIngresos}
+          appName={appName}
         />
       )}
       {/* ── Tarjetas métricas ── */}
@@ -2429,7 +2430,7 @@ function OtrosIngresos({ otrosIngresos, setOtrosIngresos, usuarios, rol, periodo
 }
 
 // ─── COMPROBANTE OTROS INGRESOS ───────────────────────────────────────────────
-function ComprobanteOI({ ingreso, onClose }) {
+function ComprobanteOI({ ingreso, onClose, appName = "Mi Edificio" }) {
   const nro = String(ingreso.id).padStart(6, "0");
   const catIcon = c => c === "Arriendo Local" ? "🏪" : c === "Arriendo Parqueadero" ? "🚗" : "📦";
   const cat = ingreso.cat || ingreso.categoria;
@@ -2450,7 +2451,7 @@ function ComprobanteOI({ ingreso, onClose }) {
     .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:16px}
   </style></head><body>
   <div style="text-align:center;font-size:36px;margin-bottom:8px">🏢</div>
-  <h2>Edificio Central</h2>
+  <h2>${appName}</h2>
   <p class="sub">Comprobante de Ingreso Oficial</p>
   <div class="box">
     <div class="fila"><span class="label">N° Comprobante</span><span class="value">#${nro}</span></div>
@@ -2462,7 +2463,7 @@ function ComprobanteOI({ ingreso, onClose }) {
     <div class="fila"><span class="label">Tipo</span><span class="value">${ingreso.pagador_tipo === "propietario" ? "Propietario" : "Externo"}</span></div>
     <div class="total"><span class="label">Monto Recibido</span><span class="value">${fmt(ingreso.monto)}</span></div>
   </div>
-  <p class="footer">✅ Verificado · ${todayStr()} · Edificio Central</p>
+  <p class="footer">✅ Verificado · ${todayStr()} · ${appName}</p>
   </body></html>`;
 
   const imprimir = () => {
@@ -2499,7 +2500,7 @@ function ComprobanteOI({ ingreso, onClose }) {
 
   const enviarCorreo = () => {
     const cuerpo = [
-      `Comprobante de Ingreso #${nro} - Edificio Central`,
+      `Comprobante de Ingreso #${nro} - ${appName}`,
       "─────────────────────────────",
       `Fecha: ${ingreso.fecha || todayStr()}`,
       `Categoría: ${cat}`,
@@ -2510,7 +2511,7 @@ function ComprobanteOI({ ingreso, onClose }) {
       "─────────────────────────────",
       `Verificado: ${todayStr()}`,
     ].filter(Boolean).join("%0D%0A");
-    window.open(`mailto:?subject=Comprobante Ingreso #${nro} - Edificio Central&body=${cuerpo}`);
+    window.open(`mailto:?subject=Comprobante Ingreso #${nro} - ${appName}&body=${cuerpo}`);
   };
 
   return (
@@ -2518,7 +2519,7 @@ function ComprobanteOI({ ingreso, onClose }) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-7">
         <div className="text-center mb-5">
           <div className="text-4xl mb-2">🏢</div>
-          <h2 className="text-xl font-bold text-slate-800">Edificio Central</h2>
+          <h2 className="text-xl font-bold text-slate-800">{appName}</h2>
           <p className="text-slate-400 text-sm">Comprobante de Ingreso #{nro}</p>
         </div>
         <div className="border-2 border-dashed border-emerald-200 rounded-xl p-4 mb-4 space-y-2.5 text-sm bg-emerald-50">
@@ -3043,14 +3044,14 @@ const MODULOS_DISPONIBLES = [
   { id: "usuarios",       label: "Usuarios",         icon: "👥" },
 ];
 const PERMS = {
-  admin:       ["dashboard","periodos","pagos","propiedades","derramas","egresos","otros_ingresos","usuarios"],
+  admin:       ["dashboard","periodos","pagos","propiedades","derramas","egresos","otros_ingresos","usuarios","configuracion"],
   tesorero:    ["dashboard","pagos","derramas","egresos","otros_ingresos"],
   colaborador: ["dashboard"],
   prop:        ["portal"],
 };
 // Nivel de acceso por módulo: "escritura" | "lectura"
 const PERMS_NIVEL_DEFAULT = {
-  admin:       { dashboard:"admin", periodos:"admin", pagos:"admin", propiedades:"admin", derramas:"admin", egresos:"admin", otros_ingresos:"admin", usuarios:"admin" },
+  admin:       { dashboard:"admin", periodos:"admin", pagos:"admin", propiedades:"admin", derramas:"admin", egresos:"admin", otros_ingresos:"admin", usuarios:"admin", configuracion:"admin" },
   tesorero:    { dashboard:"lectura", pagos:"escritura", derramas:"escritura", egresos:"escritura", otros_ingresos:"escritura" },
   colaborador: { dashboard:"lectura" },
   prop:        { portal:"lectura" },
@@ -3061,6 +3062,8 @@ const ALL_TABS = [
   { id: "derramas", icon: "🔔", label: "Derramas" }, { id: "egresos", icon: "📤", label: "Egresos" },
   { id: "otros_ingresos", icon: "💰", label: "Otros Ing." },
   { id: "usuarios", icon: "👥", label: "Usuarios" }, { id: "portal", icon: "👤", label: "Mi Portal" },
+,
+  { id: "configuracion", label: "Configuración", icon: "⚙️" },
 ];
 
 
@@ -3113,6 +3116,140 @@ function ModalInactividad({ onContinuar, onCerrar }) {
   );
 }
 
+
+// ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+function Configuracion({ config, setConfig }) {
+  const [form, setForm] = useState({ ...config });
+  const [guardando, setGuardando] = useState(false);
+  const [ok, setOk] = useState(false);
+
+  const guardar = async () => {
+    if (!form.nombre_edificio.trim()) return alert("El nombre del edificio es obligatorio");
+    setGuardando(true);
+    const payload = {
+      nombre_edificio: form.nombre_edificio.trim(),
+      nombre_corto: form.nombre_corto.trim() || form.nombre_edificio.trim().slice(0, 12),
+      logo: form.logo || null,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from('configuracion').update(payload).eq('id', 1);
+    setGuardando(false);
+    if (error) { alert("Error al guardar: " + error.message); return; }
+    setConfig({ ...config, ...payload });
+    setOk(true);
+    setTimeout(() => setOk(false), 3000);
+  };
+
+  return (
+    <div className="space-y-6 max-w-xl">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800">Configuración del Edificio</h2>
+        <p className="text-sm text-slate-500 mt-1">Personaliza el nombre e identidad visual de tu edificio</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+        {/* Logo */}
+        <div>
+          <label className="text-sm font-semibold text-slate-700 mb-2 block">Logo del Edificio</label>
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-lg">
+              {form.logo
+                ? <img src={form.logo} alt="logo" className="w-full h-full object-cover" />
+                : <span className="text-3xl">🏢</span>}
+            </div>
+            <div className="space-y-2 flex-1">
+              <button onClick={() => document.getElementById('logo-input').click()}
+                className="w-full border-2 border-dashed border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition text-center cursor-pointer">
+                📎 Subir logo o foto
+              </button>
+              <input id="logo-input" type="file" accept="image/*" className="hidden" onChange={e => {
+                const f = e.target.files[0]; if (!f) return;
+                const r = new FileReader();
+                r.onload = ev => {
+                  // Comprimir imagen
+                  const img = new Image();
+                  img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX = 400;
+                    const ratio = Math.min(MAX / img.width, MAX / img.height);
+                    canvas.width = img.width * ratio;
+                    canvas.height = img.height * ratio;
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    setForm(fm => ({ ...fm, logo: canvas.toDataURL('image/jpeg', 0.85) }));
+                  };
+                  img.src = ev.target.result;
+                };
+                r.readAsDataURL(f);
+              }} />
+              {form.logo && (
+                <button onClick={() => setForm(fm => ({ ...fm, logo: null }))}
+                  className="text-xs text-rose-500 hover:underline">✕ Quitar logo</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-4 space-y-4">
+          {/* Nombre completo */}
+          <div>
+            <label className="text-sm font-semibold text-slate-700 mb-1 block">Nombre completo del edificio</label>
+            <input
+              value={form.nombre_edificio}
+              onChange={e => {
+                const val = e.target.value;
+                setForm(fm => ({
+                  ...fm,
+                  nombre_edificio: val,
+                  nombre_corto: val.slice(0, 12)
+                }));
+              }}
+              placeholder="Ej: Edificio Torre del Sol"
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+            <p className="text-xs text-slate-400 mt-1">Se usará en comprobantes, informes y encabezados</p>
+          </div>
+
+          {/* Nombre corto */}
+          <div>
+            <label className="text-sm font-semibold text-slate-700 mb-1 block">Nombre corto <span className="text-slate-400 font-normal">(aparece en el menú lateral)</span></label>
+            <input
+              value={form.nombre_corto}
+              onChange={e => setForm(fm => ({ ...fm, nombre_corto: e.target.value.slice(0, 12) }))}
+              placeholder="Máx. 12 caracteres"
+              maxLength={12}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+            <p className="text-xs text-slate-400 mt-1">{form.nombre_corto.length}/12 caracteres</p>
+          </div>
+        </div>
+
+        {/* Vista previa */}
+        <div className="border-t border-slate-100 pt-4">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Vista previa del menú lateral</p>
+          <div className="bg-gray-900 rounded-2xl p-4 flex items-center gap-3 w-fit">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-lg">
+              {form.logo ? <img src={form.logo} alt="logo" className="w-full h-full object-cover" /> : <span className="text-lg">🏢</span>}
+            </div>
+            <div>
+              <div className="text-sm font-bold text-white">{form.nombre_corto || form.nombre_edificio.slice(0, 12) || "Edificio"}</div>
+              <div className="text-xs text-white/40">Panel de control</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Guardar */}
+        <div className="border-t border-slate-100 pt-4 flex items-center gap-3">
+          <button onClick={guardar} disabled={guardando}
+            className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 transition">
+            {guardando ? "Guardando..." : "💾 Guardar cambios"}
+          </button>
+          {ok && <span className="text-sm text-emerald-600 font-semibold">✅ Guardado correctamente</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [usuarios, setUsuarios] = useState([]);
   const [usuario, setUsuario] = useState(null);
@@ -3125,6 +3262,7 @@ export default function App() {
   const [otrosIngresos, setOtrosIngresos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [showInactividad, setShowInactividad] = useState(false);
+  const [config, setConfig] = useState({ nombre_edificio: "Mi Edificio", nombre_corto: "Edificio", logo: null, color_primario: "#6366f1" });
 
   useEffect(() => {
     // Restaurar sesión activa al recargar la página
@@ -3156,15 +3294,17 @@ export default function App() {
 
   const cargarDatos = async () => {
     setCargando(true);
-    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }, { data: dataOtrosIngresos }] = await Promise.all([
+    const [{ data: dataDeptos }, { data: dataUsuarios }, { data: dataPeriodos }, { data: dataPagos }, { data: dataDerramas }, { data: dataEgresos }, { data: dataOtrosIngresos }, { data: dataConfig }] = await Promise.all([
       supabase.from('deptos').select('*').order('id'),
       supabase.from('usuarios').select('*').order('id'),
       supabase.from('periodos').select('*').order('id'),
       supabase.from('pagos').select('*').order('id'),
       supabase.from('derramas').select('*').order('id'),
       supabase.from('egresos').select('*').order('id'),
-      supabase.from('otros_ingresos').select('*').order('id')
+      supabase.from('otros_ingresos').select('*').order('id'),
+      supabase.from('configuracion').select('*').eq('id', 1).single()
     ]);
+    if (dataConfig) setConfig(dataConfig);
     const deptosAdap = (dataDeptos || []).map(d => ({ ...d, alicuotaFija: d.alicuota_fija, metodoCalculo: d.metodo_calculo }));
     const periodosAdap = (dataPeriodos || []).map(p => ({ ...p, metodoPeriodo: p.metodo_periodo })).sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
     const pagosAdap = (dataPagos || []).map(p => ({ ...p, deptoId: p.depto_id, periodoId: p.periodo_id, periodoNombre: p.periodo_nombre, montoTotal: parseFloat(p.monto_total), montoPagado: parseFloat(p.monto_pagado), abonos: p.abonos || [] }));
@@ -3196,12 +3336,12 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center">
       <div className="text-center text-white">
         <div className="text-5xl mb-4">🏢</div>
-        <div className="text-xl font-bold mb-2">Edificio Central</div>
+        <div className="text-xl font-bold mb-2">{config.nombre_edificio}</div>
         <div className="text-indigo-200 text-sm">Cargando datos...</div>
       </div>
     </div>
   );
-  if (!usuario) return <Login onLogin={login} />;
+  if (!usuario) return <Login onLogin={login} appName={config.nombre_edificio} />;
 
   // Si el usuario tiene módulos personalizados, usarlos; sino usar PERMS por rol
   const tabsIds = (usuario.modulos && usuario.modulos.length > 0)
@@ -3233,9 +3373,11 @@ export default function App() {
       <aside className="hidden lg:flex flex-col w-60 bg-gray-900 text-white min-h-screen flex-shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-lg shadow-lg shadow-indigo-500/30">🏢</div>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center overflow-hidden shadow-lg shadow-indigo-500/30">
+            {config.logo ? <img src={config.logo} alt="logo" className="w-full h-full object-cover" /> : <span className="text-lg">🏢</span>}
+          </div>
           <div>
-            <div className="text-sm font-bold text-white">AdminEdificio</div>
+            <div className="text-sm font-bold text-white">{config.nombre_corto || config.nombre_edificio}</div>
             <div className="text-xs text-white/40">Panel de control</div>
           </div>
         </div>
@@ -3305,7 +3447,7 @@ export default function App() {
 
         {/* ── MAIN ── */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto pb-24 lg:pb-6">
-          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} />}
+          {tab === "dashboard" && <Dashboard pagos={pagos} periodos={periodos} egresos={egresos} derramas={derramas} deptos={deptos} usuarios={usuarios} setTab={setTab} otrosIngresos={otrosIngresos} appName={config.nombre_edificio} />}
           {tab === "periodos" && <Periodos periodos={periodos} setPeriodos={setPeriodos} deptos={deptos} pagos={pagos} setPagos={setPagos} egresos={egresos} />}
           {tab === "pagos" && <Pagos pagos={pagos} setPagos={setPagos} periodos={periodos} deptos={deptos} derramas={derramas} usuarios={usuarios} rol={puedeEscribir("pagos") ? "admin" : "lectura"} canDelete={puedeEliminar("pagos")} />}
           {tab === "propiedades" && <Propiedades deptos={deptos} setDeptos={setDeptos} pagos={pagos} periodos={periodos} usuarios={usuarios} rol={puedeEscribir("propiedades") ? "admin" : "lectura"} canDelete={puedeEliminar("propiedades")} />}
@@ -3314,6 +3456,7 @@ export default function App() {
           {tab === "otros_ingresos" && <OtrosIngresos otrosIngresos={otrosIngresos} setOtrosIngresos={setOtrosIngresos} usuarios={usuarios} rol={puedeEscribir("otros_ingresos") ? "admin" : "lectura"} canDelete={puedeEliminar("otros_ingresos")} periodos={periodos} />}
           {tab === "usuarios" && <Usuarios usuarios={usuarios} setUsuarios={setUsuarios} deptos={deptos} rol={usuario.rol} usuarioActivo={usuario} setUsuario={setUsuario} />}
           {tab === "portal" && <PortalProp usuario={usuario} pagos={pagos} derramas={derramas} deptos={deptos} periodos={periodos} />}
+          {tab === "configuracion" && <Configuracion config={config} setConfig={setConfig} />}
         </main>
 
         {/* ── NAV MÓVIL inferior fija ── */}
