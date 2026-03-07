@@ -409,7 +409,7 @@ function ModalPago({ cuota, onClose, onConfirm, pagosDeuda = [] }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function Login({ onLogin, appName = "Mi Edificio" }) {
+function Login({ onLogin, appName = "Mi Edificio", logo = null }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
@@ -443,7 +443,9 @@ function Login({ onLogin, appName = "Mi Edificio" }) {
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8">
         <div className="text-center mb-7">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3">🏢</div>
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3 overflow-hidden">
+            {logo ? <img src={logo} alt="logo" className="w-full h-full object-cover" /> : <span>🏢</span>}
+          </div>
           <h1 className="text-2xl font-bold text-slate-800">{appName}</h1>
           <p className="text-slate-400 text-sm">Sistema de Administración v3.1</p>
         </div>
@@ -3441,6 +3443,12 @@ export default function App() {
   useEffect(() => {
     // Restaurar sesión activa al recargar la página
     const init = async () => {
+      // Cargar configuración pública antes del login (para mostrar logo y nombre)
+      try {
+        const { data: cfgPublica } = await supabase.from('configuracion').select('*').single();
+        if (cfgPublica) setConfig(cfgPublica);
+      } catch {}
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const { data: usr } = await supabase.from('usuarios').select('*').eq('auth_id', session.user.id).eq('activo', true).single();
@@ -3648,7 +3656,7 @@ export default function App() {
       </div>
     </div>
   );
-  if (!usuario) return <Login onLogin={login} appName={config.nombre_edificio} />;
+  if (!usuario) return <Login onLogin={login} appName={config.nombre_edificio} logo={config.logo} />;
 
   // Si el usuario tiene módulos personalizados, usarlos; sino usar PERMS por rol
   const tabsIds = (usuario.modulos && usuario.modulos.length > 0)
